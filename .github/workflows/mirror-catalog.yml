@@ -1,0 +1,48 @@
+name: Mirror Store catalog
+on:
+  push:
+    paths: ['.github/workflows/mirror-catalog.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Copy and verify upstream release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEST: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          UPSTREAM="JustAnotherPU/${DEST##*/}"
+          export UPSTREAM
+          mkdir assets
+          gh api "repos/$UPSTREAM/releases/tags/catalog" > release.json
+          gh release download catalog --repo "$UPSTREAM" --dir assets
+          python3 - <<'PY'
+          import json,os,pathlib,hashlib
+          release=json.load(open('release.json'))
+          root=pathlib.Path('assets')
+          for a in release['assets']:
+              p=root/a['name']
+              assert p.is_file() and p.stat().st_size==a['size'], a['name']
+              digest=a.get('digest')
+              if digest:
+                  assert digest=='sha256:'+hashlib.sha256(p.read_bytes()).hexdigest(), a['name']
+          p=root/'catalog.json'
+          catalog=json.loads(p.read_text())
+          for c in catalog['components']:
+              a=c['artifact']
+              f=root/a['name']
+              assert f.stat().st_size==a['size']
+              assert hashlib.sha256(f.read_bytes()).hexdigest()==a['sha256']
+              a['url']='https://github.com/'+os.environ['DEST']+'/releases/download/catalog/'+a['name']
+              icon=c.get('icon')
+              if icon and icon.startswith('https://github.com/'+os.environ['UPSTREAM']+'/'):
+                  c['icon']=icon.replace(os.environ['UPSTREAM'],os.environ['DEST'],1)
+          p.write_text(json.dumps(catalog,indent=2)+'\n')
+          PY
+          gh release create catalog --repo "$DEST" --target main --title "MGU Store catalog" --notes "Verified mirror of $UPSTREAM catalog. Original licenses and source are preserved in this fork." --draft
+          gh release upload catalog assets/* --repo "$DEST"
+          gh release edit catalog --repo "$DEST" --draft=false
