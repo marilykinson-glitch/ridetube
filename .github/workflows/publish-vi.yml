@@ -1,0 +1,77 @@
+name: Publish Vietnamese RideTube
+on:
+  workflow_dispatch:
+  push:
+    paths: ['apps/**', 'kit/tools/bake_vi_fonts.py', '.github/workflows/publish-vi.yml']
+permissions:
+  contents: write
+concurrency:
+  group: publish-vi
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install font build tools
+        run: sudo apt-get update -qq && sudo apt-get install -y python3-pil python3-fonttools fonts-noto-core
+      - name: Bake Vietnamese fonts and build
+        run: |
+          python3 kit/tools/bake_vi_fonts.py
+          cp /usr/share/doc/fonts-noto-core/copyright kit/runtime/fonts/LICENSE-Noto.txt
+          mkdir -p oap-sdk
+          printf 'throw new Error("SDK placeholder must never ship");\n' > oap-sdk/index.js
+          printf '{"name":"oap-sdk","version":"0.0.0"}\n' > oap-sdk/package.json
+          python3 kit/tools/build.py jap_ridetube
+          node --check apps/jap_ridetube/main.js
+          node --check apps/jap_ridetube/yt.js
+          node kit/tools/test_ridetube.js
+      - name: Verify font coverage
+        run: |
+          python3 - <<'PY'
+          import json
+          from fontTools.ttLib import TTFont
+          chars='ĂăĐđĨĩŨũƠơƯư'+''.join(chr(c) for c in range(0x1ea0,0x1efa))
+          for fam,filename in [('label','NotoSans-Regular.ttf'),('bold','NotoSans-Bold.ttf'),('light','NotoSans-Regular.ttf')]:
+              cmap=TTFont('/usr/share/fonts/truetype/noto/'+filename).getBestCmap()
+              assert all(ord(c) in cmap for c in chars)
+              for size in json.load(open('kit/runtime/fonts/'+fam+'.json'))['sizes']:
+                  assert all(str(ord(c)) in size['glyphs'] for c in chars)
+          print('All Vietnamese glyphs exist in every label/bold/light size')
+          PY
+      - name: Commit generated fonts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add kit/runtime/fonts
+          git diff --cached --quiet || git commit -m "Bake Noto Sans Vietnamese font atlases"
+          git push origin HEAD:main
+      - name: Publish localized app in existing catalog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p dist/release
+          gh release download catalog --repo "$REPO" --pattern catalog.json --dir dist/release
+          python3 - <<'PY'
+          import importlib.util,json,os,pathlib,hashlib,tarfile
+          spec=importlib.util.spec_from_file_location('release','tools/release.py')
+          release=importlib.util.module_from_spec(spec);spec.loader.exec_module(release)
+          app=json.load(open('apps/jap_ridetube/app.json'))
+          name=app['id']+'@'+app['version']+'.tgz'
+          out=pathlib.Path('dist/release')
+          release.strip_sdk('dist/'+name,str(out/name),0)
+          with tarfile.open(out/name) as t:
+              assert not any('oap-sdk' in n for n in t.getnames())
+              pkg=json.load(t.extractfile('package/package.json'))
+              assert pkg['version']==app['version']
+              locale=json.load(t.extractfile('package/javascript/kit/locale.json'))
+              assert locale['language']=='vi'
+          catalog=json.load(open(out/'catalog.json'))
+          entry=next(c for c in catalog['components'] if c['id']==app['id'])
+          entry.update(title=app['title'],description=app['description'],version=app['version'])
+          entry['artifact']={'name':name,'size':(out/name).stat().st_size,'sha256':hashlib.sha256((out/name).read_bytes()).hexdigest(),'url':'https://github.com/'+os.environ['REPO']+'/releases/download/catalog/'+name}
+          (out/'catalog.json').write_text(json.dumps(catalog,ensure_ascii=False,indent=2)+'\n')
+          PY
+          gh release upload catalog dist/release/jap_ridetube@0.3.10.tgz --repo "$REPO" --clobber
+          gh release upload catalog dist/release/catalog.json --repo "$REPO" --clobber

@@ -25,7 +25,8 @@ function watch(ctx, log, opts) {
     ctx.signals.watch('de.bmw.infotainment.vehicle.Vehicle2', '1', {
         statusCarSpeed2: (v) => {
             const k = v && v.speedVehicleCentreOfGravity;
-            if (typeof k === 'number' && k !== 65535) { speed = k * 0.015625; at = now(); }
+            if (Number.isFinite(k) && k >= 0 && k < 65535) { speed = k * 0.015625; at = now(); }
+            else if (strict) { speed = null; }
         },
     }, log, { pollMs: 2000 }).then((s) => log && log.info('parked check: speed ' + (s.error ? 'error: ' + s.error : 'subscribed')));
     return {

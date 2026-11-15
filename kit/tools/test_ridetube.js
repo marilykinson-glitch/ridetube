@@ -81,7 +81,7 @@ async function clientAndModel() {
     // no answer at all: the app gives up on its own
     m.search('silent');
     assert.ok(m.searching && !m.checkSearch(Date.now(), 8000), 'still waiting at first');
-    assert.ok(m.checkSearch(Date.now() + 9000, 8000) && !m.searching && /No answer/.test(m.searchError), 'no answer in 8 s: an error');
+    assert.ok(m.checkSearch(Date.now() + 9000, 8000) && !m.searching && /không phản hồi/.test(m.searchError), 'no answer in 8 s: an error');
     d.got.length = 0;
 
     // search -> results (thumbs asked by the screen, see wantThumb)
@@ -205,7 +205,7 @@ async function clientAndModel() {
     assert.deepStrictEqual([m.title, m.channel], ['Sub 4', 'C'], "another video (the daemon's, only its id said): title and channel from the list");
     d.send({ ev: 'state', state: 'idle' });
     m.feed('wl');
-    assert.ok(!m.checkFeeds(Date.now(), 15000) && m.checkFeeds(Date.now() + 16000, 15000) && /No answer/.test(m.feeds.wl.error), 'no answer in 15 s: an error');
+    assert.ok(!m.checkFeeds(Date.now(), 15000) && m.checkFeeds(Date.now() + 16000, 15000) && /không phản hồi/.test(m.feeds.wl.error), 'no answer in 15 s: an error');
     m.feeds.wl.loading = false;
     m.feed('wl');
     d.send({ ev: 'feed', which: 'wl', error: 'feed offline' });
@@ -408,12 +408,12 @@ async function appFrames() {
         await sleep(300); await hu.loopFn();
         speedH({ speedVehicleCentreOfGravity: 50 * 64 });
         await sleep(300); await hu.loopFn();
-        assert.ok(frame().vrect, 'Video while driving: video while moving');
-        assert.deepStrictEqual(d.cmds('video').slice(-1)[0], { cmd: 'video', on: true }, 'Video while driving: video on');
+        assert.ok(!frame().vrect, 'Legacy setting must not override the stationary video gate');
+        assert.deepStrictEqual(d.cmds('video').slice(-1)[0], { cmd: 'video', on: false }, 'Legacy setting keeps video off');
         hu.ctx.settings.set('video_driving', false);
         await sleep(300); await hu.loopFn();
         assert.ok(!frame().vrect, 'setting off: no video while driving again');
-        console.log('ok   Video while driving setting keeps the picture while moving');
+        console.log('ok   Legacy setting cannot override stationary-only video');
         ['ov:rw', 'ov:play', 'ov:ff'].forEach((k) => assert.ok(disp.pageTargets.some((t) => t.key === k && t.w > 120 && t.w < 300), 'podcast control ' + k + ': ' + keys()));
         disp.pageTargets.find((t) => t.key === 'ov:ff').run();
         await until(() => d.cmds('seek').length > seeks, 2000, 'a podcast +10 s');
@@ -484,18 +484,18 @@ async function appFrames() {
     disp.onTab(0);
     await until(() => d.cmds('auth').length === 1, 2000, 'Home, signed out: a sign-in code asked');
     await drawn();
-    assert.ok(texts.indexOf('Getting a sign-in code...') >= 0, texts.join('|'));
+    assert.ok(texts.indexOf('Đang lấy mã đăng nhập…') >= 0, texts.join('|'));
     d.send({ ev: 'auth', state: 'code', code: 'ABC-DEF-GHIJ', url: 'https://www.google.com/device', expires: 1800 });
     await sleep(100);
     await drawn();
-    assert.ok(texts.indexOf('ABC-DEF-GHIJ') >= 0 && texts.indexOf('Enter this code on your phone') >= 0, texts.join('|'));
+    assert.ok(texts.indexOf('ABC-DEF-GHIJ') >= 0 && texts.indexOf('Nhập mã này trên điện thoại') >= 0, texts.join('|'));
     assert.ok(rects.some((r) => r.w === 296 && r.h === 296 && r.c === '#ffffff'), 'the QR code on its white square (29 + 8 modules of 8 px)');
     assert.ok(rects.filter((r) => r.c === '#000000' && r.h === 8).length > 100, 'its dark modules');
     // a url longer than the QR holds: the fixed sign-in URL instead, never a throw
     d.send({ ev: 'auth', state: 'code', code: 'ABC-DEF-GHIJ', url: 'https://www.google.com/device?' + 'x'.repeat(80), expires: 1700 });
     await sleep(100);
     await drawn();
-    assert.ok(texts.indexOf('Scan the code, or go to google.com/device') >= 0 && rects.some((r) => r.w === 296 && r.c === '#ffffff'), 'long url: the fixed one');
+    assert.ok(texts.indexOf('Quét mã hoặc truy cập google.com/device') >= 0 && rects.some((r) => r.w === 296 && r.c === '#ffffff'), 'long url: the fixed one');
     disp.onTab(1);
     await sleep(100);
     assert.strictEqual(d.cmds('auth').length, 1, 'another feed tab: the code shown, not asked again');
@@ -503,7 +503,7 @@ async function appFrames() {
     await until(() => d.cmds('feed').length === 1, 2000, 'signed in on Subscriptions: its feed asked');
     assert.deepStrictEqual(d.cmds('feed')[0], { cmd: 'feed', which: 'subs' });
     await drawn();
-    assert.ok(texts.indexOf('Loading Subscriptions...') >= 0, texts.join('|'));
+    assert.ok(texts.indexOf('Đang tải Kênh đăng ký...') >= 0, texts.join('|'));
     // an older daemon: a flat list, no shelves -> a grid of four a row; thumbs asked for the tiles drawn only
     const thumbs0 = d.cmds('thumb').length;
     d.send({ ev: 'feed', which: 'subs', items: Array.from({ length: 24 }, (_, i) => ({ id: 'f' + i, title: 'Feed ' + i, channel: 'Ch', duration_s: 90 })) });
@@ -542,7 +542,7 @@ async function appFrames() {
     assert.strictEqual(d.cmds('auth').length, 1, 'signed out (or a code expired) on a feed tab: no new device flow on its own');
     await drawn();
     if (own) {
-        assert.ok(texts.indexOf('Tap here to get a sign-in code') >= 0, texts.join('|'));
+        assert.ok(texts.indexOf('Chạm để lấy mã đăng nhập') >= 0, texts.join('|'));
         disp.pageTargets.find((x) => x.key === 'signin').run();
         await until(() => d.cmds('auth').length === 2, 2000, 'the tap asks for a code');
     } else {
@@ -688,7 +688,7 @@ function extrasModel() {
     m.onMsg({ ev: 'time', elapsed: 31000, total: 600000 });
     assert.strictEqual(m.chapter(), 'Main');
     m.onMsg({ ev: 'skipped', category: 'sponsor', ms: 10000 });
-    assert.strictEqual(m.toast.text, 'Skipped sponsor · 0:10');
+    assert.strictEqual(m.toast.text, 'Đã bỏ qua tài trợ · 0:10');
     m.onMsg({ ev: 'state', state: 'preparing', id: 'DDDDDDDDDDD' });
     m.onMsg({ ev: 'retry', id: 'DDDDDDDDDDD', n: 2, msg: 'boom' });
     assert.strictEqual(m.retry, 2, 'the network lost: trying again (2)');
@@ -714,3 +714,4 @@ function channelSearch() {
 }
 
 clientAndModel().then(appFrames).then(channelSearch).then(extrasModel).then(() => process.exit(0), (e) => { console.error('FAIL', e); process.exit(1); });
+
