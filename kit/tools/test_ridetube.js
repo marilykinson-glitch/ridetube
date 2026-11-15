@@ -1,4 +1,5 @@
 'use strict';
+require('./test_vi');
 
 // RideTube (apps/jap_ridetube): the control-socket client and the playback state against a fake jap-ridetube-d daemon on a
 // temporary Unix socket; then, when dist/jap_ridetube is built, one results and one player frame through the stubbed

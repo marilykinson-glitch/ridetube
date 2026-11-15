@@ -57,9 +57,10 @@ const X0 = 136, TW = 320, TH = 180, PITCH = 348, PER_ROW = 4;   // tiles: 16:9 t
 const TILE_H = TH + 98, HEAD_H = 50, SHELF_GAP = 30, GRID_GAP = 22;   // a tile with its text; a shelf's title row
 const OVERLAY_MS = 4000;                                 // the player's controls hide this long after a tap (playing)
 const SEARCH_MS = 8000;                                  // a search with no answer by then is an error on screen
-const SUGGEST = ['Music', 'News', 'Cars', 'Podcasts', 'Comedy', 'Trailers'];
+const SUGGEST = ['Âm nhạc', 'Tin tức', 'Ô tô', 'Podcast', 'Hài', 'Trailer phim'];
 const SLOTS = ['BTN_S1', 'BTN_S2', 'BTN_S3', 'BTN_S4', 'BTN_S5', 'BTN_S6'];
 const TABS = ['home', 'subs', 'wl'];
+const VI = require('./vi');
 const NAMES = { home: 'Trang chủ', subs: 'Kênh đăng ký', wl: 'Xem sau', results: 'Kết quả' };
 const FEED_MS = 15000;                                   // a feed with no answer by then is an error on screen
 const SIGNIN_URL = 'https://www.google.com/device';
@@ -158,8 +159,8 @@ mgu.run({
         function info() {
             let s;
             if (!model.connected) s = 'Dịch vụ phát video chưa chạy (jap-ridetube-d)';
-            else if (model.searchError) s = 'Tìm kiếm: ' + model.searchError;
-            else if (model.error) s = 'Lỗi: ' + model.error;
+            else if (model.searchError) s = 'Tìm kiếm: ' + VI.error(model.searchError);
+            else if (model.error) s = 'Lỗi: ' + VI.error(model.error);
             else if (model.active()) s = (model.state === 'preparing' ? 'Đang chuẩn bị ' + Math.round(model.pct) + ' %: ' : model.state === 'paused' ? 'Tạm dừng: ' : 'Đang phát: ') + model.title;
             else s = 'Tìm video hoặc chọn từ lịch sử bên dưới';
             ui.text('MAIN_INFO', s);
@@ -427,7 +428,7 @@ mgu.run({
             lines.forEach((l, k) => cv.text(l, x, y + TH + 32 + k * 30, 24, C.text, LITB));
             const my = y + TH + 32 + lines.length * 30 - 2;
             const meta = [r.channel].concat(Array.isArray(r.meta) ? r.meta : []).filter((m) => typeof m === 'string' && m).join(' · ');
-            if (meta) cv.text(fit(cv, meta, 20, TW, LIT), x, my, 20, C.dim, LIT);
+            if (meta) cv.text(fit(cv, VI.metadata(meta), 20, TW, LIT), x, my, 20, C.dim, LIT);
         }
 
         /* a channel: a round mark with its initial, its name, its @handle; or an action (r.act: Search channels, All) */
@@ -470,7 +471,7 @@ mgu.run({
         function chanSections() {
             const ch = model.chans;
             if (!ch || (!ch.items.length && ch.loading)) return [{ title: 'Các kênh', sub: 'Đang tải…', items: [], chan: true }];
-            if (!ch.items.length) return ch.error ? [{ title: 'Các kênh', sub: ch.error, items: [], chan: true }] : [];
+            if (!ch.items.length) return ch.error ? [{ title: 'Các kênh', sub: VI.error(ch.error), items: [], chan: true }] : [];
             const find = { id: '::find', title: chanQ ? 'Tìm lại' : 'Tìm kênh', sub: 'Nhập một chữ cái hoặc từ khóa', act: findChannel, glyph: KEYS };
             if (!chanQ) return [{ title: 'Các kênh', sub: ch.items.length + ' kênh đăng ký, A–Z', items: [find].concat(ch.items), chan: true }];
             const hits = model.findChannels(chanQ);
@@ -482,7 +483,7 @@ mgu.run({
             const c = model.chan;
             if (!model.connected) return say(cv, OFF, OFF2);
             if (!c) return say(cv, 'Chọn kênh trong Kênh đăng ký');
-            if (!c.items.length) return say(cv, c.loading ? 'Đang tải ' + (c.title || 'kênh') + '...' : c.error === 'feed offline' ? 'Không kết nối được dịch vụ video — kiểm tra Internet trên xe' : c.error || 'Kênh này chưa có video', c.title || null);
+            if (!c.items.length) return say(cv, c.loading ? 'Đang tải ' + (c.title || 'kênh') + '...' : c.error === 'feed offline' ? 'Không kết nối được dịch vụ video — kiểm tra Internet trên xe' : VI.error(c.error) || 'Kênh này chưa có video', c.title || null);
             const hid = hidden.indexOf(c.title) >= 0;
             const tog = { id: '::hide', title: hid ? 'Hiện kênh này' : 'Ẩn kênh này', sub: hid ? 'Đã ẩn khỏi Trang chủ, Kênh đăng ký và Tìm kiếm' : 'Ẩn khỏi Trang chủ, Kênh đăng ký và Tìm kiếm',
                 act: () => toggleHidden(c.title), glyph: hid ? SHOW : BLOCK };
@@ -536,7 +537,7 @@ mgu.run({
                 if (ri < first - 1 || ri > lastV + 1) return;
                 const y = ys[ri], shown = vis[ri], n = row.items.length, ty = y + (row.title ? HEAD_H : 0);
                 if (row.title && shown) {
-                    const tw = cv.text(fit(cv, row.title, 30, 1100, LITB), X0, y + 34, 30, '#ffffff', LITB);
+                    const tw = cv.text(fit(cv, VI.heading(row.title), 30, 1100, LITB), X0, y + 34, 30, '#ffffff', LITB);
                     if (row.sub) cv.text(row.sub, X0 + tw + 18, y + 34, 22, C.dim, LIT);
                 }
                 const max = row.hs ? n - PER_ROW : 0, off = Math.max(0, Math.min(max, st.off[ri] || 0));
@@ -601,7 +602,7 @@ mgu.run({
         function drawResults(cv) {
             if (!model.connected) return say(cv, OFF, OFF2);
             if (model.searching) return say(cv, 'Đang tìm "' + model.q + '"...');
-            if (model.searchError) return say(cv, 'Tìm kiếm: ' + model.searchError, 'Mở Tìm kiếm để thử lại');
+            if (model.searchError) return say(cv, 'Tìm kiếm: ' + VI.error(model.searchError), 'Mở Tìm kiếm để thử lại');
             if (!model.results.length) return say(cv, model.q ? 'Không tìm thấy kết quả cho "' + model.q + '"' : 'Chọn Tìm kiếm để tìm video', model.q ? 'Thử từ khóa khác' : null);
             drawPage(cv, [{ title: 'Kết quả cho “' + model.q + '”', items: shown(model.results), grid: true }]);
         }
@@ -613,7 +614,7 @@ mgu.run({
             const chans = which === 'subs' && model.chans && model.chans.items.length;   // the channels show without the videos
             if ((!f || !f.items.length) && !chans) {
                 return say(cv, !f || f.loading ? 'Đang tải ' + NAMES[which] + '...' : f.error === 'feed offline' ? 'Không kết nối được dịch vụ video — kiểm tra Internet trên xe'
-                    : f.error ? NAMES[which] + ': ' + f.error : which === 'wl' ? 'Danh sách Xem sau đang trống' : 'Chưa có video', which === 'wl' && f && !f.loading && !f.error ? 'Video lưu để xem sau sẽ xuất hiện ở đây' : null);
+                    : f.error ? NAMES[which] + ': ' + VI.error(f.error) : which === 'wl' ? 'Danh sách Xem sau đang trống' : 'Chưa có video', which === 'wl' && f && !f.loading && !f.error ? 'Video lưu để xem sau sẽ xuất hiện ở đây' : null);
             }
             let secs;
             if (which === 'home') {
@@ -630,7 +631,7 @@ mgu.run({
             const a = model.auth;
             // a code expired or refused, or signed out: a new one only when asked (a tap, or Sign in in the menu)
             if (a.state === 'error' || a.state === 'signed_out') {
-                say(cv, a.state === 'error' ? 'Chưa đăng nhập được (' + (a.msg || 'error') + ') — chạm để thử lại'
+                say(cv, a.state === 'error' ? 'Chưa đăng nhập được (' + (VI.error(a.msg) || 'có lỗi') + ') — chạm để thử lại'
                     : cv.own ? 'Chạm để lấy mã đăng nhập' : 'Chọn Đăng nhập trong menu để lấy mã',
                 'Trang chủ, Kênh đăng ký và Xem sau ngay trên xe');
                 if (cv.own) cv.target(MID - 520, 160, 1040, 200, () => model.authStart(true), 'signin', 16);
@@ -676,7 +677,7 @@ mgu.run({
                 if (p > 0) cv.arc(cx, cy - 20, 44, 52, 0, p * 3.6, C.red, { round: true });
                 cv.text(Math.round(p) + '%', cx, cy - 10, 30, '#ffffff', { literal: true, font: 'bold', align: 'center' });
                 cv.text(prepText(), cx, cy + 82, 26, '#dddddd', { literal: true, align: 'center' });
-            } else if (model.state === 'error') mid = 'Lỗi: ' + (model.error || 'đã dừng phát');
+            } else if (model.state === 'error') mid = 'Lỗi: ' + (VI.error(model.error) || 'đã dừng phát');
             else if (!model.active()) mid = model.state === 'ended' ? 'Đã phát xong' : 'Chọn video trong Trang chủ hoặc Tìm kiếm';
             else if (noVideo()) mid = 'Xe đang chạy — chỉ phát âm thanh';
             else if (!cv.place || !gpu()) mid = 'Cần mgu-render để hiện hình — âm thanh vẫn phát';
@@ -782,7 +783,7 @@ mgu.run({
                 cv.roundRect(x0, SH - 96, w2, 64, 32, wn ? '#4a3a10' : '#1f3d1f');
                 cv.text(tt, x0 + 30, SH - 54, 26, wn ? '#ffd27a' : '#7ee07e', LIT);
             }
-            if (model.state === 'error') cv.text(fit(cv, 'Lỗi: ' + (model.error || 'đã dừng phát'), 28, bw, LIT), x0, SH - 54, 28, '#ff6b6b', LIT);
+            if (model.state === 'error') cv.text(fit(cv, 'Lỗi: ' + (VI.error(model.error) || 'đã dừng phát'), 28, bw, LIT), x0, SH - 54, 28, '#ff6b6b', LIT);
         }
         function drawFull(cv) {
             const pl = cv.place, s = pl.scale, SW = pl.w / s, SH = pl.h / s, dx = pl.ox / s, dy = pl.oy / s;
@@ -835,7 +836,7 @@ mgu.run({
             // middle: -10 s, play / pause, +10 s; preparing: the ring with the percentage
             let mid = null;
             if (!model.connected) mid = OFF;
-            else if (model.state === 'error') mid = 'Lỗi: ' + (model.error || 'đã dừng phát');
+            else if (model.state === 'error') mid = 'Lỗi: ' + (VI.error(model.error) || 'đã dừng phát');
             const up = upNext;
             if (up) {
                 mid = 'Phát tiếp sau ' + Math.max(1, Math.ceil((nextAt - Date.now()) / 1000)) + ' giây: ' + String(up.title || up.id);
