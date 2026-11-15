@@ -483,6 +483,7 @@ function wireSettings(ctx) {
     // Settings: drawn over the page by the renderer (sheet.js) where the kit runs the screen,
     // else the HMI's settings screen. The HMI's screen shows the values chosen in either.
     settings.onChange(() => { if (!ctx.display.sheet) refresh(); });
+    ctx.refreshSettings = refresh;
     if (ui.comp('BTN_SETTINGS')) {
         ui.onClick('BTN_SETTINGS', () => {
             const d = ctx.display;

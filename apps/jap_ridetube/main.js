@@ -47,6 +47,7 @@ const { HMI } = require('./kit/display');
 const Parked = require('./kit/parked');
 const { Ctl, Model, clock, SOCKET, FEEDS, SHELF_MAX } = require('./yt');
 const { spell } = require('./speller');
+const { listSheet } = require('./kit/sheet');
 
 const W = 1600, H = 520;
 const BOX = { x: 12, y: 38, w: 1576, h: 432 };          // the video, in the page's visible part (y 38..520)
@@ -152,33 +153,42 @@ mgu.run({
             show('results');
             ui.open('VIEW');
         }
-        ui.onClick('BTN_SEARCH', () => spell(ctx.app, 'Tìm video')
-            .then((t) => search(t))
-            .catch((e) => { log.error('speller', e); ui.text('MAIN_INFO', 'Không mở được bàn phím: ' + (e.message || e)); }));
+        const askSearch = () => spell(ctx.app, 'Tìm video')
+            .then(search)
+            .catch((e) => {
+                log.error('speller', e);
+                ui.open('MAIN');
+                ui.text('MAIN_INFO', 'Không mở được bàn phím: ' + (e.message || e));
+            });
+        ui.onClick('BTN_SEARCH', askSearch);
         SLOTS.forEach((b, i) => ui.onClick(b, () => search(slots()[i])));
-        ui.onClick('BTN_NOW', () => { show('player'); ui.open('VIEW'); });
-        ui.onClick('BTN_RESULTS', () => { show('results'); ui.open('VIEW'); });
-        [['BTN_HOME', 'home'], ['BTN_SUBS', 'subs'], ['BTN_WL', 'wl']].forEach(([b, m]) => ui.onClick(b, () => { show(m); ui.open('VIEW'); }));
+        const goTo = (m) => { show(m); return ui.open('VIEW'); };
+        const searchPages = [['BTN_NOW', 'player', 'Đang phát'], ['BTN_RESULTS', 'results', 'Kết quả'],
+            ['BTN_HOME', 'home', 'Trang chủ'], ['BTN_SUBS', 'subs', 'Kênh đăng ký'], ['BTN_WL', 'wl', 'Xem sau']];
+        searchPages.forEach(([id, mode]) => ui.onClick(id, () => goTo(mode)));
         // Sign in: the Home tab shows how (after a failed try, asks again). Sign out: pressed twice within 5 s
         let signOutArmed = null;
-        ui.onClick('BTN_ACCOUNT', () => {
+        const accountLabel = () => model.auth.state !== 'signed_in' ? 'Đăng nhập' : signOutArmed ? 'Nhấn lần nữa để đăng xuất' : 'Đăng xuất';
+        const account = () => {
             if (model.auth.state !== 'signed_in') { show('home'); model.authStart(true); ui.open('VIEW'); return; }
             if (!signOutArmed) { signOutArmed = setTimeout(() => { signOutArmed = null; labels(); }, 5000); labels(); return; }
             clearTimeout(signOutArmed); signOutArmed = null;
             model.signOut();
             labels();
-        });
+        };
+        ui.onClick('BTN_ACCOUNT', account);
         showSlots();
 
-        function info() {
+        function statusText() {
             let s;
             if (!model.connected) s = 'Dịch vụ phát video chưa chạy (jap-ridetube-d)';
             else if (model.searchError) s = 'Tìm kiếm: ' + VI.error(model.searchError);
             else if (model.error) s = 'Lỗi: ' + VI.error(model.error);
             else if (model.active()) s = (model.state === 'preparing' ? 'Đang chuẩn bị ' + Math.round(model.pct) + ' %: ' : model.state === 'paused' ? 'Tạm dừng: ' : 'Đang phát: ') + model.title;
             else s = 'Tìm video hoặc chọn từ lịch sử bên dưới';
-            ui.text('MAIN_INFO', s);
+            return s;
         }
+        const info = () => ui.text('MAIN_INFO', statusText());
         info();
         setInterval(() => { try { model.checkSearch(Date.now(), SEARCH_MS); model.checkFeeds(Date.now(), FEED_MS); if (ui.isVisible('MAIN')) info(); } catch (e) { log.error('info', e); } }, 1000);
 
@@ -219,7 +229,7 @@ mgu.run({
             if (p !== lastPlay) { lastPlay = p; ui.text('BTN_PLAY', p); }
             const l = mode === 'player' ? NAMES[browse] : model.active() ? 'Đang phát' : 'Trình phát';
             if (l !== lastList) { lastList = l; ui.text('BTN_LIST', l); }
-            const a = model.auth.state !== 'signed_in' ? 'Đăng nhập' : signOutArmed ? 'Nhấn lần nữa để đăng xuất' : 'Đăng xuất';
+            const a = accountLabel();
             if (a !== lastAcct) { lastAcct = a; ui.text('BTN_ACCOUNT', a); }
         }
         ui.onClick('BTN_PLAY', () => model.toggle());
@@ -227,8 +237,24 @@ mgu.run({
         ui.onClick('BTN_FF', () => model.skip(10000));
         ui.onClick('BTN_LIST', () => show(mode === 'player' ? browse : 'player'));
         if (ctx.onTab) ctx.onTab((i) => { if (TABS[i]) show(TABS[i]); });
-        ui.onClick('BTN_FIND', () => ui.open('MAIN'));
-        const openSettings = () => ui.open('SETTINGS');
+        const openSearch = () => {
+            if (ctx.sheet && ctx.sheet(listSheet(null, 'Tìm kiếm', {
+                subtitle: statusText,
+                actions: () => [{ label: 'Tìm video', kind: 'more', run: askSearch }]
+                    .concat(searchPages.map(([, mode, label]) => ({ label, run: () => goTo(mode) })))
+                    .concat(slots().map((q) => ({ label: SUGGEST.get(q) || q, run: () => search(q) })))
+                    .concat({ label: accountLabel(), run: account }),
+            }))) return;
+            return ui.open('MAIN');
+        };
+        ui.onClick('BTN_FIND', openSearch);
+        const openSettings = () => {
+            const sheet = listSheet(settings, 'Cài đặt', { version: ctx.spec.version });
+            sheet.settings = true;
+            sheet.onClose = ctx.refreshSettings;
+            if (ctx.sheet && ctx.sheet(sheet)) return;
+            return ui.open('SETTINGS');
+        };
         ui.onClick('BTN_RT_SETTINGS', openSettings);
         // where the kit runs the screen: no bar at all (the rail and the player's overlay do its jobs), so the
         // pages reach the screen's bottom; the HMI's own screen keeps its bar
@@ -433,7 +459,7 @@ mgu.run({
                 if (on) cv.roundRect(18, y, 90, tileH, 16, bg);
                 glyph(cv, cx, cy - 8, c, bg);
                 cv.text(name === 'Kênh đăng ký' ? 'Đăng ký' : name, cx, y + tileH - 9, 16, c, { literal: true, align: 'center', font: on ? 'bold' : 'label' });
-                if (cv.own) cv.target(16, y, 92, tileH, () => (m === 'settings' ? openSettings() : m === 'search' ? ui.open('MAIN') : show(m)), 'rail:' + m, 16);
+                if (cv.own) cv.target(16, y, 92, tileH, () => (m === 'settings' ? openSettings() : m === 'search' ? openSearch() : show(m)), 'rail:' + m, 16);
             });
         }
 

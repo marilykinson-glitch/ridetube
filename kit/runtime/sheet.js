@@ -103,15 +103,18 @@ function values(s) {
     return null;
 }
 
-/** opts: { version } (the app's, shown at the settings' top) */
+/** A settings list, or a menu whose rows run actions after closing. */
 function listSheet(settings, title, opts) {
     const version = opts && opts.version;
-    const schema = settings.schema.filter((s) => !s.hidden);
+    const actions = opts && opts.actions;
+    const subtitle = opts && opts.subtitle;
+    const schema = actions ? [] : settings.schema.filter((s) => !s.hidden);
     const sh = {
         title: title || 'Settings',
         focus: 0, open: null, sub: 0,        // open: the setting whose values are listed
         controller: false,                  // the controller was used: show where it is
         rows() {
+            if (actions) return actions();
             if (this.open) {
                 const cur = settings.get(this.open.key);
                 return values(this.open).map((v) => ({ label: v[1], kind: 'radio', on: v[0] === cur }));
@@ -125,6 +128,7 @@ function listSheet(settings, title, opts) {
             const rows = this.rows();
             // the header's tab names the sheet; a value list names its setting here
             if (this.open) r.text(this.open.label, 44, TOP + 40, 32, t.text, { font: 'bold' });
+            else if (subtitle) r.text(fit(r, subtitle(), 24, W - 270), 44, TOP + 38, 24, t.dim);
             else if (version) r.text(translate('Version') + ' ' + version, 44, TOP + 38, 24, t.dim);
             const targets = [];
             // Back (a value list) / Done (the settings): top right
@@ -136,7 +140,7 @@ function listSheet(settings, title, opts) {
             rects.forEach((q) => targets.push(Object.assign(q, { act: () => { if (this.open) this.sub = q.i; else this.focus = q.i; return this.choose(); } })));
             return targets;
         },
-        key() { return this.open ? 'v_' + this.open.key : 'settings'; },
+        key() { return actions ? title : this.open ? 'v_' + this.open.key : 'settings'; },
         /** the controller is on Done / Back: pushed up from here it goes to the header's tabs */
         top() { return (this.open ? this.sub : this.focus) === -1; },
         /** touch: the list moved by dy (px, + = further down the list) while the finger is on it */
@@ -157,6 +161,12 @@ function listSheet(settings, title, opts) {
             return this.choose();
         },
         choose() {
+            if (actions) {
+                const action = actions()[this.focus];
+                if (!action) return null;
+                this.onClose = action.run;
+                return 'close';
+            }
             if (this.open) {
                 const v = values(this.open)[this.sub];
                 if (v && v[0] !== settings.get(this.open.key)) settings.set(this.open.key, v[0]);
