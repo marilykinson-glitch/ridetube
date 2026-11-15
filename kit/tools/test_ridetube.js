@@ -296,8 +296,8 @@ async function appFrames() {
     // recent search -> results with a 320x180 thumb
     hu.handlers.BTN_S1();
     await until(() => d.cmds('search').length, 2000, 'search');
-    assert.deepStrictEqual(d.cmds('search')[0], { cmd: 'search', q: 'Music' }, 'first suggestion');
-    d.send({ ev: 'results', q: 'Music', items: [{ id: 'aaa', title: 'Song', channel: 'Band', duration_s: 200, meta: ['5 views'] }] });
+    assert.deepStrictEqual(d.cmds('search')[0], { cmd: 'search', q: 'Âm nhạc' }, 'first suggestion');
+    d.send({ ev: 'results', q: 'Âm nhạc', items: [{ id: 'aaa', title: 'Song', channel: 'Band', duration_s: 200, meta: ['5 views'] }] });
     await sleep(100);
     await hu.loopFn();
     await until(() => d.cmds('thumb').some((x) => x.id === 'aaa'), 2000, 'results thumb asked');

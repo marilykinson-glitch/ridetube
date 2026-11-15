@@ -2,7 +2,7 @@ name: Publish Vietnamese RideTube
 on:
   workflow_dispatch:
   push:
-    paths: ['apps/**', 'kit/tools/bake_vi_fonts.py', '.github/workflows/publish-vi.yml']
+    paths: ['apps/**', 'kit/tools/**', 'kit/runtime/**', '.github/workflows/publish-vi.yml']
 permissions:
   contents: write
 concurrency:
