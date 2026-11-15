@@ -1,4 +1,8 @@
-# RideTube
+# YouTube TV
+
+YouTube TV là bản Việt hóa không chính thức của [RideTube](https://github.com/JustAnotherPU/ridetube) dành cho BMW iDrive 7.
+
+Trong MGU Store, thêm `marilykinson-glitch/ridetube:releases` và `JustAnotherPU/mgu-apps:releases`, sau đó cài hoặc cập nhật **YouTube TV**. Bản này dùng cùng mã ứng dụng với RideTube để cập nhật bản đã cài.
 
 > **Experimental and unofficial.** RideTube is an unofficial client for YouTube. It is not affiliated with,
 > endorsed by or sponsored by Google or YouTube. Use it at your own risk. You are responsible for following

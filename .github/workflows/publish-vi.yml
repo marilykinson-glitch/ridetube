@@ -1,4 +1,4 @@
-name: Publish Vietnamese RideTube
+name: Publish YouTube TV
 on:
   workflow_dispatch:
   push:
@@ -54,7 +54,7 @@ jobs:
           mkdir -p dist/release
           gh release download catalog --repo "$REPO" --pattern catalog.json --dir dist/release
           python3 - <<'PY'
-          import importlib.util,json,os,pathlib,hashlib,tarfile
+          import importlib.util,json,os,pathlib,hashlib,shutil,tarfile
           spec=importlib.util.spec_from_file_location('release','tools/release.py')
           release=importlib.util.module_from_spec(spec);spec.loader.exec_module(release)
           app=json.load(open('apps/jap_ridetube/app.json'))
@@ -71,7 +71,10 @@ jobs:
           entry=next(c for c in catalog['components'] if c['id']==app['id'])
           entry.update(title=app['title'],description=app['description'],version=app['version'])
           entry['artifact']={'name':name,'size':(out/name).stat().st_size,'sha256':hashlib.sha256((out/name).read_bytes()).hexdigest(),'url':'https://github.com/'+os.environ['REPO']+'/releases/download/catalog/'+name}
+          icon=out/('youtube-tv-'+app['version']+'.png')
+          shutil.copyfile('apps/jap_ridetube/icon.png',icon)
+          entry.update(icon=icon.name,iconSha256=release.sha256(icon))
           (out/'catalog.json').write_text(json.dumps(catalog,ensure_ascii=False,indent=2)+'\n')
           PY
-          gh release upload catalog dist/release/jap_ridetube@0.3.10.tgz --repo "$REPO" --clobber
+          gh release upload catalog dist/release/*.tgz dist/release/*.png --repo "$REPO" --clobber
           gh release upload catalog dist/release/catalog.json --repo "$REPO" --clobber

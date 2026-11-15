@@ -366,8 +366,10 @@ mgu.run({
         const tri = (cv, cx, cy, s, c) => cv.quad([[cx - s * 0.38, cy - s / 2], [cx + s * 0.5, cy], [cx - s * 0.38, cy + s / 2], [cx - s * 0.38, cy - s / 2]], c);
         // Try again: a circle arrow (cv.arc's ring, its head at the top)
         const retryGlyph = (cv, cx, cy, r, c) => { cv.arc(cx, cy, r - 5, r, 40, 340, c); cv.quad([[cx - 4, cy - r - 9], [cx + 10, cy - r + 2], [cx - 4, cy - r + 12], [cx - 4, cy - r - 9]], c); };
-        // RideTube's mark: a cyan screen outline with the pink play mark in it
-        const logo = (cv, cx, cy, w) => { cv.strokeRoundRect(cx - w / 2, cy - w * 0.33, w, w * 0.66, w * 0.16, Math.max(3, Math.round(w * 0.06)), C.cyan); tri(cv, cx + w * 0.04, cy, w * 0.32, C.red); };
+        const logo = (cv, cx, cy, w) => {
+            cv.roundRect(cx - w / 2, cy - w * 0.35, w, w * 0.70, w * 0.21, '#ff0033');
+            tri(cv, cx, cy, w * 0.32, '#ffffff');
+        };
 
         /* the left rail: Search, Home, Subscriptions, Watch later */
         const RAIL = [
@@ -710,7 +712,7 @@ mgu.run({
         function drawPodcast(cv, SW, SH, LX, tg, run, live) {
             cv.fillRect(0, 0, SW, SH, C.bg);
             const x0 = LX + 46, top = 40, ch = model.channel || (model.item(model.id) || {}).channel;
-            cv.text('RideTube', x0, top + 30, 34, '#ffffff', LITB);
+            cv.text('YouTube TV', x0, top + 30, 34, '#ffffff', LITB);
             const chip = 'Chỉ âm thanh · xe đang chạy', cw = cv.textWidth(chip, 22, LIT) + 40;
             cv.roundRect(x0 + 170, top, cw, 40, 20, C.ph);
             cv.text(chip, x0 + 170 + cw / 2, top + 28, 22, C.dim, { literal: true, align: 'center' });

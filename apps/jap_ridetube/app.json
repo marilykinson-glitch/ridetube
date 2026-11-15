@@ -1,12 +1,12 @@
 {
   "id": "jap_ridetube",
-  "title": "YouTube • Tiếng Việt",
-  "description": "RideTube Việt hóa: tìm kiếm, đăng nhập, kênh đăng ký, xem sau, phát tiếp và SponsorBlock. Font Noto Sans đầy đủ dấu tiếng Việt. Chỉ hiện video khi xe đứng yên.",
-  "version": "0.3.10",
+  "title": "YouTube TV",
+  "description": "Ứng dụng YouTube không chính thức cho BMW iDrive 7. Giao diện tiếng Việt với font Noto Sans, tìm kiếm, kênh đăng ký, Xem sau và SponsorBlock.",
+  "version": "0.3.11",
   "license": "GPL-3.0-or-later",
   "vendor": "custom",
   "loggingId": "OAA6",
-  "iconGlyph": "RT",
+  "iconGlyph": "YT",
   "signals": {
     "de.bmw.infotainment.vehicle.Vehicle2": {
       "statusCarSpeed2": "rs"
@@ -19,7 +19,7 @@
     {
       "name": "VIEW",
       "kind": "canvas",
-      "title": "YouTube khi đỗ xe",
+      "title": "YouTube TV",
       "hmi": false,
       "bg": "#0f0f0f",
       "buttons": [
