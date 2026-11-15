@@ -5,9 +5,9 @@
  * and decodes the picture (ytdec) into
  * /dev/shm/mgu-video-ridetube, which the renderer (mgu-render) draws in this app's layer (op 19).
  *
- * Screens (a TV-style dark look: navy, neon pink and cyan, big 16:9 tiles):
+ * Screens (a TV-style dark look: navy, red and neutral selection colors, big 16:9 tiles):
  *   VIEW  (first) drawn page. Browsing: an icon rail on the left (Search = the HMI menu, Home, Subscriptions,
- *         Watch later; the page shown lit, a pink mark) and, right of it, rows of tiles: a 320 x 180
+ *         Watch later; the page shown with a neutral highlight) and, right of it, rows of tiles: a 320 x 180
  *         thumb (its length in a pill), the title in up to two lines, "channel · 125K views · 1 day ago".
  *           home     shelves, each titled, turned sideways on their own: Continue watching, the account's
  *                    Home shelves (daemon `feed` shelves; an older daemon: its flat list as a grid), Watch later
@@ -74,6 +74,9 @@ process.on('uncaughtException', (e) => { try { mgu.log.error('uncaught', e); } c
 mgu.run({
     async start(ctx) {
         const { ui, settings, log } = ctx;
+        const displayTheme = ctx.theme;
+        const theme = () => Object.assign({}, displayTheme(), { sel: '#d9d9d9', selText: '#ffffff' });
+        if (ctx.display) ctx.display.theme = theme;
         const parked = Parked.watch(ctx, log, { strict: true });
         // the drive lock: Video while driving counts only once switched on while parked, so a press while moving
         // cannot bring the picture up; switching it off works at once
@@ -225,9 +228,11 @@ mgu.run({
         ui.onClick('BTN_LIST', () => show(mode === 'player' ? browse : 'player'));
         if (ctx.onTab) ctx.onTab((i) => { if (TABS[i]) show(TABS[i]); });
         ui.onClick('BTN_FIND', () => ui.open('MAIN'));
+        const openSettings = () => ui.open('SETTINGS');
+        ui.onClick('BTN_RT_SETTINGS', openSettings);
         // where the kit runs the screen: no bar at all (the rail and the player's overlay do its jobs), so the
-        // pages reach the screen's bottom; the HMI's own screen keeps all five
-        if (ctx.hideButton) ['BTN_PLAY', 'BTN_RW', 'BTN_FF', 'BTN_LIST', 'BTN_FIND'].forEach((b) => ctx.hideButton(b, true));
+        // pages reach the screen's bottom; the HMI's own screen keeps its bar
+        if (ctx.hideButton) ['BTN_PLAY', 'BTN_RW', 'BTN_FF', 'BTN_LIST', 'BTN_FIND', 'BTN_RT_SETTINGS'].forEach((b) => ctx.hideButton(b, true));
         labels();
 
         /* ---------- the player's overlay (where the kit runs the screen): shown on a tap or the controller ---------- */
@@ -329,7 +334,7 @@ mgu.run({
             return s.slice(0, lo).replace(/\s+$/, '') + '…';     // (no trimEnd on the unit's Node 8)
         };
         const LIT = { literal: true }, LITB = { literal: true, font: 'bold' };
-        const C = { bg: '#0b0f1e', card: '#1a2038', ph: '#232a46', text: '#f1f3ff', dim: '#a4abc8', red: '#ff3f8e', cyan: '#3ad6ff', amber: '#ffd36b' };   // red: the accent (neon pink)
+        const C = { bg: '#0b0f1e', card: '#1a2038', ph: '#232a46', text: '#f1f3ff', dim: '#a4abc8', red: '#ff0033', cyan: '#3ad6ff', amber: '#ffd36b' };
         const browsing = () => mode !== 'player';
 
         // thumbs: a pool of picture ids by video, least recently drawn reused (the renderer holds 64 pictures an app)
@@ -382,7 +387,20 @@ mgu.run({
             tri(cv, cx, cy, w * 0.32, '#ffffff');
         };
 
-        /* the left rail: Search, Home, Subscriptions, Watch later */
+        const premiumOptions = { literal: true, font: 'bold' };
+        function premium(cv, size, x, y, color) {
+            const w = size * 1.5, gap = size * 0.19;
+            if (x !== undefined) {
+                logo(cv, x + w / 2, y - size * 0.34, w);
+                cv.text('Premium', x + w + gap, y, size, color, premiumOptions);
+            }
+            return w + gap + cv.textWidth('Premium', size, premiumOptions);
+        }
+        const premiumActive = () => model.auth.state === 'signed_in';
+        if (ctx.display) ctx.display.headerMark = (cv, size, x, y, color) =>
+            premiumActive() ? premium(cv, size, x, y, color) : 0;
+
+        /* the left rail: search, feeds and settings */
         const RAIL = [
             ['search', 'Tìm kiếm', (cv, x, y, c) => { cv.arc(x - 4, y - 4, 9, 12.5, 0, 360, c); cv.line(x + 4.5, y + 4.5, x + 14, y + 14, 4.5, c); }],
             ['home', 'Trang chủ', (cv, x, y, c, bg) => {
@@ -395,18 +413,27 @@ mgu.run({
             }],
             ['wl', 'Xem sau', (cv, x, y, c) => { cv.arc(x, y, 14, 17.5, 0, 360, c); cv.line(x, y + 1, x, y - 9, 3.5, c); cv.line(x, y, x + 7, y + 5, 3.5, c); }],
         ];
+        const SETTINGS = ['settings', 'Cài đặt', (cv, x, y, c) => {
+            cv.arc(x, y, 5, 10, 0, 360, c);
+            for (let i = 0; i < 8; i++) {
+                const a = i * Math.PI / 4, dx = Math.cos(a), dy = Math.sin(a);
+                cv.line(x + 8 * dx, y + 8 * dy, x + 16 * dx, y + 16 * dy, 5, c);
+            }
+        }];
         // while something plays: back to the player (the bar's Now playing, where the kit runs the screen)
         const PLAYING = ['player', 'Đang phát', (cv, x, y, c) => { [10, 20, 14].forEach((h, k) => cv.roundRect(x - 15 + k * 11, y + 8 - h, 8, h + 8, 2, c)); }];
         function drawRail(cv) {
             const sel = mode === 'results' ? 'search' : mode === 'channel' ? 'subs' : mode, bottom = H + (cv.own ? cv.extra : 0);
-            const items = cv.own && model.active() ? RAIL.concat([PLAYING]) : RAIL;
+            const items = cv.own ? RAIL.concat(model.active() ? [PLAYING, SETTINGS] : [SETTINGS]) : RAIL;
             const pitch = Math.min(100, (bottom - 156) / (items.length - 1));   // (the page down to the screen's bottom where it reaches)
+            const tileH = Math.min(84, Math.floor(pitch) - 4);
             items.forEach(([m, name, glyph], i) => {
                 const cx = 62, cy = 96 + Math.round(i * pitch), on = m === sel, bg = on ? '#2c2c2c' : C.bg, c = on ? '#ffffff' : C.dim;
-                if (on) { cv.roundRect(18, cy - 38, 90, 84, 16, bg); cv.roundRect(18, cy - 14, 5, 28, 2.5, C.red); }
+                const y = cy - Math.floor(tileH / 2) + 4;
+                if (on) cv.roundRect(18, y, 90, tileH, 16, bg);
                 glyph(cv, cx, cy - 8, c, bg);
-                cv.text(name === 'Kênh đăng ký' ? 'Đăng ký' : name, cx, cy + 34, 16, c, { literal: true, align: 'center', font: on ? 'bold' : 'label' });
-                if (cv.own) cv.target(16, cy - 38, 92, 84, () => (m === 'search' ? ui.open('MAIN') : show(m)), 'rail:' + m, 16);
+                cv.text(name === 'Kênh đăng ký' ? 'Đăng ký' : name, cx, y + tileH - 9, 16, c, { literal: true, align: 'center', font: on ? 'bold' : 'label' });
+                if (cv.own) cv.target(16, y, 92, tileH, () => (m === 'settings' ? openSettings() : m === 'search' ? ui.open('MAIN') : show(m)), 'rail:' + m, 16);
             });
         }
 
@@ -723,7 +750,8 @@ mgu.run({
         function drawPodcast(cv, SW, SH, LX, tg, run, live) {
             cv.fillRect(0, 0, SW, SH, C.bg);
             const x0 = LX + 46, top = 40, ch = model.channel || (model.item(model.id) || {}).channel;
-            const titleW = cv.text('YouTube TV', x0, top + 30, 34, '#ffffff', LITB);
+            const titleW = premiumActive() ? premium(cv, 34, x0, top + 30, '#ffffff')
+                : cv.text('YouTube TV', x0, top + 30, 34, '#ffffff', LITB);
             const chipX = x0 + titleW + 24;
             const chip = 'Chỉ âm thanh · xe đang chạy', cw = cv.textWidth(chip, 22, LIT) + 40;
             cv.roundRect(chipX, top, cw, 40, 20, C.ph);
@@ -947,7 +975,13 @@ mgu.run({
                     if (browsing()) drawRail(cv);
                     if (mode === 'player') drawPlayer(cv); else if (mode === 'channel') drawChannel(cv); else if (mode === 'results') drawResults(cv); else drawFeed(cv, isFeed(mode) ? mode : 'home');
                     // where the kit runs the screen the rail has the pages: the header shows just the name
-                    if (cv.own) G.frame(cv, ctx.theme(), [], -1); else G.frame(cv, ctx.theme(), TABS.map((m) => NAMES[m]), TABS.indexOf(mode));
+                    if (cv.own) G.frame(cv, theme(), [], -1);
+                    else {
+                        G.frame(cv, theme(), TABS.map((m) => NAMES[m]), TABS.indexOf(mode));
+                        if (premiumActive() && !cv.chrome) {
+                            premium(cv, 21, W - 24 - premium(cv, 21), 26, '#ffffff');
+                        }
+                    }
                 }
                 last = cv;
             }

@@ -275,6 +275,12 @@ async function appFrames() {
     const { headUnit } = require('./hu-stub');
     const hu = headUnit(stage, { dataDir: dir, fresh: true, image: () => Promise.resolve(), log: quiet });
     const disp = hu.display;
+    const opened = [];
+    const openScreen = hu.ui.open;
+    hu.ui.open = (name) => { opened.push(name); return openScreen(name); };
+    assert.ok(hu.spec.stateIds.SETTINGS, 'BMW HMI has a separate settings state');
+    assert.ok(!hu.spec.screens.find((screen) => screen.name === 'MAIN').settings, 'search does not embed settings');
+
     // parked: the car reads 0 km/h (the video gate counts no speed as moving)
     let speedH = null;
     let batH = null;
@@ -285,6 +291,9 @@ async function appFrames() {
     hu.ctx.focus = (k) => disp.focusPage(k);
     hu.start();
     await until(() => d.cmds('auth_status').length, 3000, 'app connects and asks for the account');
+    hu.handlers.BTN_RT_SETTINGS();
+    assert.strictEqual(opened.pop(), 'SETTINGS', 'native bar opens settings directly');
+    assert.strictEqual(disp.headerMark({}, 32), 0, 'signed-out header keeps the app name');
     const POOL = (id) => id >= 8 && id < 64;
     const frame = () => scan(fs.readFileSync(file));
     // first screen: Home, signed out: the sign-in card, no tiles; never a library (nothing is kept on the car)
@@ -456,6 +465,8 @@ async function appFrames() {
         hu.handlers.BTN_RESULTS();           // (the search's results page)
         await hu.loopFn();
         const ks = keys();
+        disp.pageTargets.find((t) => t.key === 'rail:settings').run();
+        assert.strictEqual(opened.pop(), 'SETTINGS', 'gear opens the same BMW settings screen');
         assert.deepStrictEqual(ks.slice(0, 4), ['rail:search', 'rail:home', 'rail:subs', 'rail:wl'], 'the rail first: ' + ks);
         assert.ok(ks.indexOf('rail:library') < 0, 'no Library');
         assert.ok(ks.indexOf('rail:player') < 0, 'nothing playing: no Playing');
@@ -501,6 +512,7 @@ async function appFrames() {
     await sleep(100);
     assert.strictEqual(d.cmds('auth').length, 1, 'another feed tab: the code shown, not asked again');
     d.send({ ev: 'auth', state: 'signed_in' });
+    await until(() => disp.headerMark({ textWidth: () => 100 }, 32) > 100, 2000, 'signed in replaces the header name with the Premium mark');
     await until(() => d.cmds('feed').length === 1, 2000, 'signed in on Subscriptions: its feed asked');
     assert.deepStrictEqual(d.cmds('feed')[0], { cmd: 'feed', which: 'subs' });
     await drawn();
@@ -540,6 +552,7 @@ async function appFrames() {
     await until(() => d.cmds('sign_out').length === 1, 2000, 'second press signs out');
     d.send({ ev: 'auth', state: 'signed_out' });
     await sleep(150);
+    assert.strictEqual(disp.headerMark({}, 32), 0, 'signing out restores the regular header');
     assert.strictEqual(d.cmds('auth').length, 1, 'signed out (or a code expired) on a feed tab: no new device flow on its own');
     await drawn();
     if (own) {

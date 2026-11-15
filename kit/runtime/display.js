@@ -823,7 +823,7 @@ class Display {
         // right of it the HMI's strip shows through (radio station, phone signal, status icons)
         const hx = this.left() - pl.x, whole = this.whole(), fill = this.fill();
         const end = fill ? 0 : G.header(c, Object.assign({}, t, { bg: HMI.headBg }), hx, 0, (whole ? W : HMI.status.x - pl.x) - hx, FULL.headH,
-            this.screen.title || this.spec.title, tb.tabs, tb.sel, tb.badges, true, true);
+            this.screen.title || this.spec.title, tb.tabs, tb.sel, tb.badges, true, true, this.headerMark);
         // the HMI's own title is in the strip under the header: a narrower header (a sheet: no tabs) stays
         // as wide as the app's widest, so none of that title shows beside it
         if (!this.sheet && !fill) this.headMax = Math.max(this.headMax || 0, end);
