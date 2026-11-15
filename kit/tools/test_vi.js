@@ -14,7 +14,7 @@ const a=new Canvas(1200,140), b=new Canvas(1200,140);
 assert.strictEqual(a.textWidth(sample,32,{literal:true}),a.textWidth(sample.normalize('NFD'),32,{literal:true}));
 a.text(sample,20,70,32,'#ffffff',{literal:true});b.text(sample.normalize('NFD'),20,70,32,'#ffffff',{literal:true});
 assert.deepStrictEqual(a.png(),b.png());
-for(const label of ['Tìm kiếm','Trang chủ','Đăng ký','Xem sau']) assert.ok(a.textWidth(label,18,{literal:true,font:'bold'})<=90,label+' exceeds rail');
+for(const label of ['Tìm kiếm','Trang chủ','Đăng ký','Xem sau']) assert.ok(a.textWidth(label,16,{literal:true,font:'bold'})<=90,label+' exceeds rail');
 assert.strictEqual(vi.metadata('12K views · 2 days ago'),'12K lượt xem · 2 ngày trước');
 assert.strictEqual(vi.error('search offline'),'Không kết nối được tìm kiếm. Kiểm tra Internet trên xe.');
 assert.strictEqual(vi.heading('Recommended'),'Đề xuất');

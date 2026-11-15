@@ -392,7 +392,7 @@ mgu.run({
                 const cx = 62, cy = 96 + Math.round(i * pitch), on = m === sel, bg = on ? '#2c2c2c' : C.bg, c = on ? '#ffffff' : C.dim;
                 if (on) { cv.roundRect(18, cy - 38, 90, 84, 16, bg); cv.roundRect(18, cy - 14, 5, 28, 2.5, C.red); }
                 glyph(cv, cx, cy - 8, c, bg);
-                cv.text(name === 'Kênh đăng ký' ? 'Đăng ký' : name, cx, cy + 34, 18, c, { literal: true, align: 'center', font: on ? 'bold' : 'label' });
+                cv.text(name === 'Kênh đăng ký' ? 'Đăng ký' : name, cx, cy + 34, 16, c, { literal: true, align: 'center', font: on ? 'bold' : 'label' });
                 if (cv.own) cv.target(16, cy - 38, 92, 84, () => (m === 'search' ? ui.open('MAIN') : show(m)), 'rail:' + m, 16);
             });
         }
