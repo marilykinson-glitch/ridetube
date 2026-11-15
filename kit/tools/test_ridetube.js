@@ -296,8 +296,8 @@ async function appFrames() {
     // recent search -> results with a 320x180 thumb
     hu.handlers.BTN_S1();
     await until(() => d.cmds('search').length, 2000, 'search');
-    assert.deepStrictEqual(d.cmds('search')[0], { cmd: 'search', q: 'Âm nhạc' }, 'first suggestion');
-    d.send({ ev: 'results', q: 'Âm nhạc', items: [{ id: 'aaa', title: 'Song', channel: 'Band', duration_s: 200, meta: ['5 views'] }] });
+    assert.deepStrictEqual(d.cmds('search')[0], { cmd: 'search', q: 'Music' }, 'first suggestion');
+    d.send({ ev: 'results', q: 'Music', items: [{ id: 'aaa', title: 'Song', channel: 'Band', duration_s: 200, meta: ['5 views'] }] });
     await sleep(100);
     await hu.loopFn();
     await until(() => d.cmds('thumb').some((x) => x.id === 'aaa'), 2000, 'results thumb asked');
@@ -409,12 +409,12 @@ async function appFrames() {
         await sleep(300); await hu.loopFn();
         speedH({ speedVehicleCentreOfGravity: 50 * 64 });
         await sleep(300); await hu.loopFn();
-        assert.ok(!frame().vrect, 'Legacy setting must not override the stationary video gate');
-        assert.deepStrictEqual(d.cmds('video').slice(-1)[0], { cmd: 'video', on: false }, 'Legacy setting keeps video off');
+        assert.ok(frame().vrect, 'Video while driving: video while moving');
+        assert.deepStrictEqual(d.cmds('video').slice(-1)[0], { cmd: 'video', on: true }, 'Video while driving: video on');
         hu.ctx.settings.set('video_driving', false);
         await sleep(300); await hu.loopFn();
         assert.ok(!frame().vrect, 'setting off: no video while driving again');
-        console.log('ok   Legacy setting cannot override stationary-only video');
+        console.log('ok   Video while driving setting keeps the picture while moving');
         ['ov:rw', 'ov:play', 'ov:ff'].forEach((k) => assert.ok(disp.pageTargets.some((t) => t.key === k && t.w > 120 && t.w < 300), 'podcast control ' + k + ': ' + keys()));
         disp.pageTargets.find((t) => t.key === 'ov:ff').run();
         await until(() => d.cmds('seek').length > seeks, 2000, 'a podcast +10 s');

@@ -31,7 +31,8 @@
  *   MAIN  HMI menu (Search): the HMI's speller, Now playing, Results, Home, Subscriptions, Watch later, recent
  *         searches / suggestions, then Sign in / Sign out (pressed twice).
  *
- * Video only while stationary. Movement or a stale speed hides the picture (daemon `video off`,
+ * Video only while parked (kit parked.js), unless the "Video while driving" setting is on (for a car coded
+ * for video in motion): driving off turns the picture off (daemon `video off`,
  * renderer DROP_VIDEO), the sound plays on; parked again, it comes back. The app stays ACTIVE
  * while hidden as long as sound plays (ctx.background), because closing the socket stops playback.
  * Never exits: every handler logs its errors.
@@ -57,7 +58,10 @@ const X0 = 136, TW = 320, TH = 180, PITCH = 348, PER_ROW = 4;   // tiles: 16:9 t
 const TILE_H = TH + 98, HEAD_H = 50, SHELF_GAP = 30, GRID_GAP = 22;   // a tile with its text; a shelf's title row
 const OVERLAY_MS = 4000;                                 // the player's controls hide this long after a tap (playing)
 const SEARCH_MS = 8000;                                  // a search with no answer by then is an error on screen
-const SUGGEST = ['Âm nhạc', 'Tin tức', 'Ô tô', 'Podcast', 'Hài', 'Trailer phim'];
+const SUGGEST = new Map([
+    ['Music', 'Âm nhạc'], ['News', 'Tin tức'], ['Cars', 'Ô tô'],
+    ['Podcasts', 'Podcast'], ['Comedy', 'Hài'], ['Trailers', 'Trailer phim'],
+]);
 const SLOTS = ['BTN_S1', 'BTN_S2', 'BTN_S3', 'BTN_S4', 'BTN_S5', 'BTN_S6'];
 const TABS = ['home', 'subs', 'wl'];
 const VI = require('./vi');
@@ -71,7 +75,14 @@ mgu.run({
     async start(ctx) {
         const { ui, settings, log } = ctx;
         const parked = Parked.watch(ctx, log, { strict: true });
-        const noVideo = () => parked.moving() || parked.speed() !== 0;
+        // the drive lock: Video while driving counts only once switched on while parked, so a press while moving
+        // cannot bring the picture up; switching it off works at once
+        let videoDrivingOk = false;
+        const noVideo = () => {
+            const on = settings.get('video_driving') === true, moving = parked.moving();
+            videoDrivingOk = moving ? videoDrivingOk && on : on;
+            return moving && !videoDrivingOk;
+        };
 
         /* ---------- the daemon ---------- */
         const ctl = new Ctl(process.env.MGU_YT_SOCKET || SOCKET, log);
@@ -126,8 +137,8 @@ mgu.run({
         const RECENT = path.join(ctx.dataDir, 'recent.json');
         let recent = [];
         try { recent = JSON.parse(fs.readFileSync(RECENT, 'utf8')).filter((s) => typeof s === 'string').slice(0, SLOTS.length); } catch (e) { /* none yet */ }
-        const slots = () => recent.concat(SUGGEST.filter((s) => recent.indexOf(s) < 0)).slice(0, SLOTS.length);
-        const showSlots = () => slots().forEach((s, i) => ui.text(SLOTS[i], s));
+        const slots = () => recent.concat(Array.from(SUGGEST.keys()).filter((s) => recent.indexOf(s) < 0)).slice(0, SLOTS.length);
+        const showSlots = () => slots().forEach((s, i) => ui.text(SLOTS[i], SUGGEST.get(s) || s));
         function search(q) {
             q = String(q || '').trim();
             if (!q) return;
@@ -712,10 +723,11 @@ mgu.run({
         function drawPodcast(cv, SW, SH, LX, tg, run, live) {
             cv.fillRect(0, 0, SW, SH, C.bg);
             const x0 = LX + 46, top = 40, ch = model.channel || (model.item(model.id) || {}).channel;
-            cv.text('YouTube TV', x0, top + 30, 34, '#ffffff', LITB);
+            const titleW = cv.text('YouTube TV', x0, top + 30, 34, '#ffffff', LITB);
+            const chipX = x0 + titleW + 24;
             const chip = 'Chỉ âm thanh · xe đang chạy', cw = cv.textWidth(chip, 22, LIT) + 40;
-            cv.roundRect(x0 + 170, top, cw, 40, 20, C.ph);
-            cv.text(chip, x0 + 170 + cw / 2, top + 28, 22, C.dim, { literal: true, align: 'center' });
+            cv.roundRect(chipX, top, cw, 40, 20, C.ph);
+            cv.text(chip, chipX + cw / 2, top + 28, 22, C.dim, { literal: true, align: 'center' });
             cv.text('Hình ảnh trở lại khi xe dừng', SW - 60, top + 28, 22, '#717171', { literal: true, align: 'right' });
             // laid out from the bottom: the notice / up-next row, the controls, the bar; the artwork takes what is left
             const cy = SH - 178, by = cy - 128, ay = top + 72, ah = Math.max(120, by - 56 - ay), aw = Math.round(ah * 16 / 9), ax = x0;
