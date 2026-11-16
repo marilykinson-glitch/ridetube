@@ -698,8 +698,14 @@ Audio.prototype.play = function (file) {
 Audio.prototype.playNow = async function (file) {
     await this.init();
     await this.waitAvailable();
-    const r = await this.cc.callMethod('connect', { sourceID: SOURCE_ID, sinkID: SINK_ID }, 5000);
-    this.opts.log('connect ' + JSON.stringify(r));
+    // BMW can briefly reject a new route just after the previous one disconnects on resume.
+    let r;
+    for (const delay of [0, 250, 500, 1000]) {
+        if (delay) await sleep(delay);
+        r = await this.cc.callMethod('connect', { sourceID: SOURCE_ID, sinkID: SINK_ID }, 5000);
+        this.opts.log('connect ' + JSON.stringify(r));
+        if (!r || r.amError !== 'E_NOT_POSSIBLE') break;
+    }
     if (!r || (r.amError !== 'E_OK' && r.amError !== 'E_ALREADY_EXISTS')) throw new Error('audio connect: ' + (r && r.amError));
     this.connId = r.mainConnectionID;
     if (this.connId === undefined || this.connId === null) this.connId = -1; // id unknown: release sweeps by source

@@ -2,7 +2,7 @@ name: Publish YouTube TV
 on:
   workflow_dispatch:
   push:
-    paths: ['apps/**', 'kit/tools/**', 'kit/runtime/**', '.github/workflows/publish-vi.yml']
+    paths: ['apps/**', 'kit/tools/**', 'kit/runtime/**', 'native/jap-ridetube-d/**', 'tools/repack_audio.py', '.github/workflows/publish-vi.yml']
 permissions:
   contents: write
 concurrency:
@@ -26,6 +26,7 @@ jobs:
           node --check apps/jap_ridetube/main.js
           node --check apps/jap_ridetube/yt.js
           node kit/tools/test_ridetube.js
+          node native/jap-ridetube-d/test/test_ytd.js
       - name: Verify font coverage
         run: |
           python3 - <<'PY'
@@ -53,6 +54,8 @@ jobs:
         run: |
           mkdir -p dist/release
           gh release download catalog --repo "$REPO" --pattern catalog.json --dir dist/release
+          curl -fsSL 'https://github.com/JustAnotherPU/ridetube/releases/download/catalog/jap-ridetube-d@0.3.9.tgz' -o dist/service-base.tgz
+          python3 tools/repack_audio.py dist/service-base.tgz dist/release
           python3 - <<'PY'
           import importlib.util,json,os,pathlib,hashlib,shutil,tarfile
           spec=importlib.util.spec_from_file_location('release','tools/release.py')
@@ -74,6 +77,12 @@ jobs:
           icon=out/('youtube-tv-'+app['version']+'.png')
           shutil.copyfile('apps/jap_ridetube/icon.png',icon)
           entry.update(icon=icon.name,iconSha256=release.sha256(icon))
+          service=next(c for c in catalog['components'] if c['id']=='jap-ridetube-d')
+          service_spec=json.load(open('native/jap-ridetube-d/component.json'))
+          service['version']=service_spec['version']
+          service_path=out/(service['id']+'@'+service['version']+'.tgz')
+          service['artifact']=release.artifact(service_path,'https://github.com/'+os.environ['REPO']+'/releases/download/catalog/')
+          entry['requires'][service['id']]=service['version']
           (out/'catalog.json').write_text(json.dumps(catalog,ensure_ascii=False,indent=2)+'\n')
           PY
           gh release upload catalog dist/release/*.tgz dist/release/*.png --repo "$REPO" --clobber

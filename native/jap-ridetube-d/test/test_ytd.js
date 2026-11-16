@@ -25,6 +25,7 @@ const calls = [];
 let conns = [{ mainConnectionID: 7, sourceID: 1046, sinkID: 1024 }, { mainConnectionID: 15, sourceID: 129, sinkID: 387 }];
 let nextConn = 20;
 let slowPlayFile = 0;
+let refusedConnections = 0;
 const subs = {};
 const someip = {
     buildProxy: async (cfg, inst) => ({
@@ -34,6 +35,10 @@ const someip = {
         getValue: async (n) => { assert.strictEqual(n, 'listOfMainConnections'); return conns.slice(); },
         callMethod: async (m, a) => {
             calls.push({ inst: inst, m: m, a: a });
+            if (m === 'connect' && refusedConnections > 0) {
+                refusedConnections--;
+                return { amError: 'E_NOT_POSSIBLE' };
+            }
             if (m === 'connect') { const id = nextConn++; conns.push({ mainConnectionID: id, sourceID: a.sourceID }); return { mainConnectionID: id, amError: 'E_OK' }; }
             if (m === 'disconnect') { conns = conns.filter((c) => c.mainConnectionID !== a.mainConnectionID); return { amError: 'E_OK' }; }
             if (m === 'playFile' && slowPlayFile) await sleep(slowPlayFile);
@@ -216,18 +221,20 @@ async function main() {
         calls.length = 0;
         c.send({ cmd: 'pause' });
         await c.waitFor((x) => x.ev === 'state' && x.state === 'paused');
+        refusedConnections = 2;
         c.send({ cmd: 'resume' });
         await c.waitFor((x) => x.ev === 'state' && x.state === 'playing');
         c.send({ cmd: 'seek', ms: 30000 });
         c.send({ cmd: 'video', on: false });
         c.send({ cmd: 'video', on: true });
+        await waitUntil(() => called('playFile').length === 1);
         await sleep(200);
         assert.strictEqual(called('setTime').length, 0, 'no setTime before the restarted file ticks (the player drops it)');
         tick(0);
         await waitUntil(() => called('setTime').length > 0);
         // pause = STOP where it is (the car's player answers OK to PAUSE and plays on); resume = the file again, set there
         assert.deepStrictEqual(called('sendButtonEvent').map((x) => x.a.button), ['STOP', 'STOP'], 'pause; resume releases (STOP, disconnect) and connects again');
-        assert.strictEqual(called('connect').length, 1);
+        assert.strictEqual(called('connect').length, 3, 'resume retries two temporary audio route rejections');
         assert.deepStrictEqual(called('playFile').map((x) => x.a.path), [path.join(cache, 'DemoVideo01', 'audio.m4a')]);
         // the seek sent while the file restarts wins: one setTime, there
         assert.deepStrictEqual(called('setTime').map((x) => x.a.newTimeElapsed), [30000]);
