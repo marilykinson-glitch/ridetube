@@ -391,6 +391,10 @@ mgu.run({
         };
         const LIT = { literal: true }, LITB = { literal: true, font: 'bold' };
         const C = { bg: '#0b0f1e', card: '#1a2038', ph: '#232a46', text: '#f1f3ff', dim: '#a4abc8', red: '#ff0033', cyan: '#3ad6ff', amber: '#ffd36b' };
+        const progressTip = '#ff2791';
+        const progressColors = [C.red, C.red, C.red, C.red, progressTip];
+        const drawProgress = (cv, x, y, width, height) =>
+            cv.rampRect(x, y, width, height, height / 2, progressColors);
         const browsing = () => mode !== 'player';
 
         // thumbs: a pool of picture ids by video, least recently drawn reused (the renderer holds 64 pictures an app)
@@ -788,8 +792,8 @@ mgu.run({
                 cv.gradientRect(BOX.x, bot - 120, BOX.w, 120, [[0, '#00000000'], [1, '#000000d8']]);
                 const tx = BOX.x + 30, tw = BOX.w - 60, ty = bot - 62, k = Math.min(1, model.elapsed / model.total), fx = tx + Math.round(tw * k);
                 cv.roundRect(tx, ty, tw, 6, 3, '#ffffff55');
-                cv.roundRect(tx, ty, fx - tx, 6, 3, C.red);
-                cv.circle(fx, ty + 3, 9, C.red);
+                drawProgress(cv, tx, ty, fx - tx, 6);
+                cv.circle(fx, ty + 3, 9, fx > tx ? progressTip : C.red);
                 cv.text(clock(model.elapsed), tx, bot - 20, 24, '#ffffff', LITB);
                 cv.text(clock(model.total), tx + tw, bot - 20, 24, '#dddddd', { literal: true, font: 'bold', align: 'right' });
             }
@@ -834,11 +838,11 @@ mgu.run({
             cv.roundRect(x0, by, bw, 10, 5, '#3f3f3f');
             if (tot > 0) {
                 const el = shownAt(), bf = focusKey === 'ov:bar';
-                cv.roundRect(x0, by, Math.max(10, at(el) - x0), 10, 5, C.red);
+                drawProgress(cv, x0, by, at(el) - x0, 10);
                 if (ex) sbSegs(ex).forEach((g) => cv.fillRect(at(g[0]), by, Math.max(4, at(g[1]) - at(g[0])), 10, sbColor(g)));
                 if (ex) ex.chapters.forEach((k) => { if (k[0] > 0) cv.fillRect(at(k[0]) - 2, by, 4, 10, C.bg); });
                 if (bf) cv.circle(at(el), by + 5, 24, '#3ea6ff');
-                cv.circle(at(el), by + 5, bf ? 18 : 14, C.red);
+                cv.circle(at(el), by + 5, bf ? 18 : 14, el > 0 ? progressTip : C.red);
                 progressTarget(x0, by - 36, bw, 80);
                 cv.text(clock(el), x0, by + 50, 26, C.dim, LIT);
                 cv.text('-' + clock(tot - el), x0 + bw, by + 50, 26, C.dim, { literal: true, align: 'right' });
@@ -987,11 +991,11 @@ mgu.run({
                 const x0 = LX + 40, w = SW - x0 - 40, y = SH - 66, el = shownAt(), fx = x0 + Math.round(w * Math.min(1, el / model.total)), bf = focusKey === 'ov:bar';
                 const at = (ms) => x0 + Math.round(w * Math.min(1, ms / model.total)), ex = model.extras && model.extras.id === model.id ? model.extras : null;
                 cv.roundRect(x0, y, w, 6, 3, '#ffffff55');
-                cv.roundRect(x0, y, fx - x0, 6, 3, C.red);
+                drawProgress(cv, x0, y, fx - x0, 6);
                 if (ex) sbSegs(ex).forEach((g) => cv.fillRect(at(g[0]), y, Math.max(3, at(g[1]) - at(g[0])), 6, sbColor(g)));   // SponsorBlock: skipped green, asked yellow
                 if (ex) ex.chapters.forEach((c) => { if (c[0] > 0) cv.fillRect(at(c[0]) - 2, y, 4, 6, '#000000'); });
                 if (bf) cv.circle(fx, y + 3, 18, '#ffffff');
-                cv.circle(fx, y + 3, bf ? 14 : 10, C.red);
+                cv.circle(fx, y + 3, bf ? 14 : 10, el > 0 ? progressTip : C.red);
                 progressTarget(x0, y - 34, w, 70);
                 const tt0 = clock(el) + ' / ' + clock(model.total), tw = cv.textWidth(tt0, 24, LITB), chap = model.chapter();
                 cv.text(tt0, x0, SH - 22, 24, '#ffffff', LITB);
