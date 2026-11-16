@@ -205,6 +205,12 @@ mgu.run({
         }
         // it: the tile tapped (its title and channel show while the video is prepared)
         // list: the row it was picked from; the videos after it play next when one ends (autoplay)
+        const fillEnabled = () => settings.get('fill') === true;
+        settings.onChange((key) => {
+            if (key !== 'fill') return;
+            model.fill(fillEnabled());
+            dirty = true;
+        });
         const QUALITIES = ['auto', '720', '480', '360'];   // app.json's Video quality values, in the button's order
         let queue = [], nextAt = 0;
         function play(id, it, list) {
@@ -212,7 +218,7 @@ mgu.run({
             if (list) { const i = list.findIndex((r) => r.id === id); queue = list.slice(i + 1).filter((r) => r && !r.act && /^[\w-]{11}$/.test(r.id)); }
             nextAt = 0;
             if (model.id === id && model.active()) return;
-            model.play(id, rect(), settings.get('fill') !== false, it, { quality: settings.get('quality'), skip: sbSkip() });
+            model.play(id, rect(), fillEnabled(), it, { quality: settings.get('quality'), skip: sbSkip() });
         }
         // from render: ended with a next one -> 5 s to see what comes, then it plays (back to the list cancels)
         function autoNext() {
@@ -971,15 +977,15 @@ mgu.run({
                 });
                 skip('ov:ff', cx + 210, 1, 10000);
                 // right: Video quality (a press takes the next one; the video starts again there) and zoom (fill crops)
-                const qv = String(settings.get('quality') || 'auto'), fl = settings.get('fill') !== false, qx = SW - 330, zx = SW - 150;
+                const qv = String(settings.get('quality') || 'auto'), fl = fillEnabled(), qx = SW - 330, zx = SW - 150;
                 ctl('ov:q', qx, cy, 42, () => { const q = QUALITIES[(QUALITIES.indexOf(qv) + 1) % QUALITIES.length]; settings.set('quality', q); model.quality(q); },
                     (c) => cv.text(qv === 'auto' ? 'Tự động' : qv + 'p', qx, cy + 8, 22, c, { literal: true, font: 'bold', align: 'center' }));
                 cv.text('Chất lượng', qx, cy + 76, 22, '#dddddd', { literal: true, align: 'center' });
-                ctl('ov:zoom', zx, cy, 42, () => { settings.set('fill', !fl); model.fill(!fl); }, (c) => {
+                ctl('ov:zoom', zx, cy, 42, () => settings.set('fill', !fillEnabled()), (c) => {
                     cv.strokeRoundRect(zx - 22, cy - 15, 44, 30, 4, 3, c);
                     if (fl) cv.fillRect(zx - 22, cy - 15, 44, 30, c); else cv.fillRect(zx - 12, cy - 15, 24, 30, c);
                 });
-                cv.text(fl ? 'Vừa khung' : 'Lấp đầy', zx, cy + 76, 22, '#dddddd', { literal: true, align: 'center' });
+                cv.text(fl ? 'Lấp đầy' : 'Vừa khung', zx, cy + 76, 22, '#dddddd', { literal: true, align: 'center' });
             } else if (model.state === 'error' && model.id && model.connected) {
                 ctl('ov:play', cx, cy, 58, again, (c) => retryGlyph(cv, cx, cy, 26, c));
                 cv.text('Thử lại', cx, cy + 100, 26, '#dddddd', { literal: true, align: 'center' });

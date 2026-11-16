@@ -354,11 +354,25 @@ async function appFrames() {
         await lastIs(d, { cmd: 'quality', quality: '720' }, 'Quality: the next one');
         assert.strictEqual(hu.ctx.settings.get('quality'), '720');
         await hu.loopFn();
+        const fillCount = d.cmds('fill').length;
         disp.pageTargets.find((t) => t.key === 'ov:zoom').run();
-        await lastIs(d, { cmd: 'fill', on: true }, 'Zoom: fill the screen');
+        await lastIs(d, { cmd: 'fill', on: true }, 'player applies fill to the current video');
         assert.strictEqual(hu.ctx.settings.get('fill'), true);
-        hu.ctx.settings.set('quality', 'auto'); hu.ctx.settings.set('fill', false);
+
+        hu.handlers.BTN_RT_SETTINGS();
+        const fillIndex = disp.sheet.rows().findIndex((row) => row.label.startsWith('Lấp đầy màn hình'));
+        assert.ok(fillIndex >= 0);
+        assert.strictEqual(disp.sheet.rows()[fillIndex].on, true, 'settings reflect the player toggle');
+        disp.sheet.focus = fillIndex;
+        disp.sheet.press();
+        await lastIs(d, { cmd: 'fill', on: false }, 'settings apply fit to the current video');
+        assert.strictEqual(hu.ctx.settings.get('fill'), false);
+        disp.closeSheet();
         await hu.loopFn();
+        assert.deepStrictEqual(d.cmds('fill').slice(fillCount), [
+            { cmd: 'fill', on: true }, { cmd: 'fill', on: false },
+        ], 'each change sends exactly one command');
+        hu.ctx.settings.set('quality', 'auto');
         disp.pageTargets.find((t) => t.key === 'ov:qr').run();
         await hu.loopFn();
         assert.deepStrictEqual(keys(), ['ov:back', 'ov:qr', 'ov:qrcard'], 'On phone: the QR card over the controls');
