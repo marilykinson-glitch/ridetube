@@ -517,12 +517,12 @@ async function main() {
         assert.strictEqual(d.fetcher, null);
     });
 
-    await t('fetcher error before playable: retried after a wait (retry event), then plays', async () => {
-        fs.writeFileSync(ctl, 'fail'); c.clear(); calls.length = 0;
+    await t('DNS failure from API page is retried, then playback starts', async () => {
+        fs.writeFileSync(ctl, 'dns'); c.clear(); calls.length = 0;
         d.opts.fetchRetryMs = [300];
         c.send({ cmd: 'play', id: 'FFFFFFFFFR4', rect: '1280x720' });
         const r = await c.waitFor((x) => x.ev === 'retry', 4000);
-        assert.deepStrictEqual(r, { ev: 'retry', id: 'FFFFFFFFFR4', n: 1, msg: 'boom' });
+        assert.deepStrictEqual(r, { ev: 'retry', id: 'FFFFFFFFFR4', n: 1, msg: 'extract: Unable to download API page: [Errno -2] www.youtube.com: lease DNS: no A record' });
         fs.writeFileSync(ctl, '');                          // the network back
         await c.waitFor((x) => x.ev === 'state' && x.state === 'playing' && x.id === 'FFFFFFFFFR4', 4000);
         assert.ok(!c.evs.some((x) => x.ev === 'state' && x.state === 'error'), 'no error on the way');

@@ -16,6 +16,9 @@ const errors = {
 function error(value) {
     const s = String(value || '');
     if (errors[s]) return errors[s];
+    if (/^fetch:.*(?:lease DNS|\[Errno -2\]|name resolution|getaddrinfo)/i.test(s)) {
+        return 'Không tìm được máy chủ YouTube. Kiểm tra Wi-Fi hoặc điểm phát sóng của xe.';
+    }
     if (s.indexOf('video incomplete: ') === 0) return 'Video tải chưa hoàn tất: ' + s.slice(18);
     if (s.indexOf('internal error: ') === 0) return 'Lỗi dịch vụ: ' + s.slice(16);
     return s;
