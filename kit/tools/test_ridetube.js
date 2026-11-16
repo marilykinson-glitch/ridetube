@@ -289,6 +289,7 @@ async function appFrames() {
     hu.ctx.hideButton = (id, hide) => disp.hideButton(id, hide);
     hu.ctx.onPageFocus = (fn) => { disp.onPageFocus = fn; };
     hu.ctx.focus = (k) => disp.focusPage(k);
+    hu.ctx.onTouch = (fn) => { disp.onTouch = fn; };
     hu.start();
     await until(() => d.cmds('auth_status').length, 3000, 'app connects and asks for the account');
     hu.handlers.BTN_RT_SETTINGS();
@@ -376,6 +377,23 @@ async function appFrames() {
         await sleep(500);
         assert.strictEqual(d.cmds('seek').length, nSeek + 1, 'one seek for the three detents');
         await lastIs(d, { cmd: 'seek', ms: 21000 }, 'the knob on the bar: +10 s net');
+        await hu.loopFn();
+        const barTarget = disp.pageTargets.find((t) => t.key === 'ov:bar');
+        const sx = (part) => barTarget.x + 10 + (barTarget.w - 20) * part;
+        const sy = barTarget.y + barTarget.h / 2;
+        const pauseCount = d.cmds('pause').length;
+        const seekCount = d.cmds('seek').length;
+        disp._touch(1, sx(0.25), sy);
+        disp._touch(3, sx(0.25), sy);
+        await lastIs(d, { cmd: 'seek', ms: 50000 }, 'tap seeks to the tapped time');
+        disp._touch(1, sx(0.25), sy);
+        disp._touch(2, sx(0.4), sy);
+        await sleep(100);
+        assert.strictEqual(d.cmds('seek').length, seekCount + 1, 'drag previews before committing');
+        disp._touch(3, sx(0.105), sy);
+        await lastIs(d, { cmd: 'seek', ms: 21000 }, 'drag seeks once when the finger lifts');
+        assert.strictEqual(d.cmds('seek').length, seekCount + 2);
+        assert.strictEqual(d.cmds('pause').length, pauseCount);
         // SponsorBlock "ask" (end cards by default): a Skip button while the clock is in one, the overlay kept
         d.send({ ev: 'extras', id: 'aaa', chapters: [], segments: [[15000, 60000, 'outro']] });
         await sleep(100); await hu.loopFn();

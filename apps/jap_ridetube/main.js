@@ -263,14 +263,44 @@ mgu.run({
 
         /* ---------- the player's overlay (where the kit runs the screen): shown on a tap or the controller ---------- */
         // the knob turned on the progress bar: 10 s a detent, one seek once it rests 350 ms (the bar moves at once)
-        let pend = 0, pendT = null;
+        let pend = 0, pendT = null, scrubTrack = null, scrub = null;
+        const seekable = () => model.state === 'playing' || model.state === 'paused';
+        if (ctx.onTouch) ctx.onTouch((phase, x, y) => {
+            if (phase === 1) {
+                scrub = null;
+                const t = scrubTrack;
+                if (!t || mode !== 'player' || !overlay() || !seekable() || !model.total ||
+                    (ctx.display && ctx.display.sheet) ||
+                    x < t.x - t.pad || x > t.x + t.w + t.pad || y < t.y || y > t.y + t.h) return false;
+                clearTimeout(pendT);
+                pend = 0;
+                scrub = { track: t, id: model.id, ms: model.elapsed };
+            }
+            if (!scrub) return false;
+            if (mode !== 'player' || model.id !== scrub.id || !seekable() || (ctx.display && ctx.display.sheet)) {
+                scrub = null;
+                return true;
+            }
+            const { track } = scrub;
+            scrub.ms = Math.max(0, Math.min(1, (x - track.x) / track.w)) * model.total;
+            wake();
+            if (phase === 3) {
+                const ms = scrub.ms;
+                scrub = null;
+                model.skip(ms - model.elapsed);
+            }
+            return true;
+        });
         function turnSeek(d) {
             if (model.state !== 'playing' && model.state !== 'paused') return;
             pend += d * 10000; wake();
             clearTimeout(pendT);
             pendT = setTimeout(() => { const ms = pend; pend = 0; model.skip(ms); dirty = true; }, 350);
         }
-        const shownAt = () => Math.max(0, Math.min(model.total > 0 ? model.total : Infinity, model.elapsed + pend));
+        const shownAt = () => {
+            const at = scrub && scrub.id === model.id ? scrub.ms : model.elapsed + pend;
+            return Math.max(0, Math.min(model.total || Infinity, at));
+        };
         // preparing: its percentage, or the network lost and the daemon trying again
         const prepText = () => (model.retry ? 'Mất kết nối — đang thử lại (' + model.retry + ')...' : 'Đang chuẩn bị… ' + Math.round(model.pct || 0) + ' %');
         // a failed play: Try again (the same video, the queue kept)
@@ -313,7 +343,7 @@ mgu.run({
         let ovUntil = 0, qrUntil = 0;   // qrUntil: the On phone QR card shows until then
         function wake() { ovUntil = Date.now() + OVERLAY_MS; dirty = true; }
         // it stays while there is no moving picture to look at
-        const pinned = () => model.state !== 'playing' || !videoShown || noVideo() || !!askSeg();
+        const pinned = () => (scrub && scrub.id === model.id) || model.state !== 'playing' || !videoShown || noVideo() || !!askSeg();
         const overlay = () => pinned() || Date.now() < ovUntil || Date.now() < qrUntil;
         // a tap beside the controls (no target): hides them
         if (ctx.onTap) ctx.onTap(() => { if (mode === 'player' && !pinned() && overlay()) { ovUntil = 0; dirty = true; } });
@@ -773,7 +803,7 @@ mgu.run({
         const OVK = ['ov:back', 'ov:qr', 'ov:rw', 'ov:play', 'ov:ff', 'ov:q', 'ov:zoom', 'ov:bar'];
         // podcast mode (driving): artwork, title, chapter, the bar with chapter ticks and skipped segments, controls
         // a glove can hit (-10 s, play/pause, +10 s, next in the row), the next video, a skipped-sponsor notice
-        function drawPodcast(cv, SW, SH, LX, tg, run, live) {
+        function drawPodcast(cv, SW, SH, LX, tg, run, live, progressTarget) {
             cv.fillRect(0, 0, SW, SH, C.bg);
             const x0 = LX + 46, top = 40, ch = model.channel || (model.item(model.id) || {}).channel;
             const titleW = premiumActive() ? premium(cv, 34, x0, top + 30, '#ffffff')
@@ -809,7 +839,7 @@ mgu.run({
                 if (ex) ex.chapters.forEach((k) => { if (k[0] > 0) cv.fillRect(at(k[0]) - 2, by, 4, 10, C.bg); });
                 if (bf) cv.circle(at(el), by + 5, 24, '#3ea6ff');
                 cv.circle(at(el), by + 5, bf ? 18 : 14, C.red);
-                tg(x0 - 10, by - 36, bw + 20, 80, run(() => model.toggle()), 'ov:bar', 0, turnSeek);
+                progressTarget(x0, by - 36, bw, 80);
                 cv.text(clock(el), x0, by + 50, 26, C.dim, LIT);
                 cv.text('-' + clock(tot - el), x0 + bw, by + 50, 26, C.dim, { literal: true, align: 'right' });
             } else if (model.state === 'preparing') cv.text(prepText(), x0, by + 50, 26, C.dim, LIT);
@@ -866,7 +896,11 @@ mgu.run({
             cv.xf(s, 0, 0);
             const LX = HMI.left / s, act = model.active(), live = model.state === 'playing' || model.state === 'paused';
             const cx = SW / 2, cy = SH / 2 - 6, run = (fn) => () => { fn(); wake(); };
-            if (pod) { drawPodcast(cv, SW, SH, LX, tg, run, live); hmiIcons(cv); return; }
+            const progressTarget = (x, y, w, h) => {
+                scrubTrack = { x: x * s, y: y * s, w: w * s, h: h * s, pad: 10 * s };
+                tg(x - 10, y, w + 20, h, run(() => model.toggle()), 'ov:bar', 0, turnSeek);
+            };
+            if (pod) { drawPodcast(cv, SW, SH, LX, tg, run, live, progressTarget); hmiIcons(cv); return; }
             // a round control: dark, white when the controller is on it (its glyph dark then)
             const ctl = (key, x, y, r, fn, glyph) => {
                 const f = focusKey === key;
@@ -958,7 +992,7 @@ mgu.run({
                 if (ex) ex.chapters.forEach((c) => { if (c[0] > 0) cv.fillRect(at(c[0]) - 2, y, 4, 6, '#000000'); });
                 if (bf) cv.circle(fx, y + 3, 18, '#ffffff');
                 cv.circle(fx, y + 3, bf ? 14 : 10, C.red);
-                tg(x0 - 10, y - 34, w + 20, 70, run(() => model.toggle()), 'ov:bar', 0, turnSeek);
+                progressTarget(x0, y - 34, w, 70);
                 const tt0 = clock(el) + ' / ' + clock(model.total), tw = cv.textWidth(tt0, 24, LITB), chap = model.chapter();
                 cv.text(tt0, x0, SH - 22, 24, '#ffffff', LITB);
                 if (chap) cv.text(fit(cv, '·  ' + chap, 24, w - tw - 20, LIT), x0 + tw + 14, SH - 22, 24, '#dddddd', LIT);
@@ -994,6 +1028,7 @@ mgu.run({
             // redraw on a change (and 4 times a second); unchanged, the same frame again keeps the layer alive (>= 1 message/s)
             if (!last || dirty || model.rev !== lastRev || now - lastT > 250) {
                 dirty = false; lastRev = model.rev; lastT = now;
+                scrubTrack = null;
                 const cv = ctx.canvas(W, H).clear(C.bg);
                 frameNo++;
                 if (mode === 'player' && cv.own && cv.place && cv.place.full) drawFull(cv);
