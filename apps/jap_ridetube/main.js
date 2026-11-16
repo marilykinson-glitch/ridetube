@@ -985,7 +985,7 @@ mgu.run({
                     cv.strokeRoundRect(zx - 22, cy - 15, 44, 30, 4, 3, c);
                     if (fl) cv.fillRect(zx - 22, cy - 15, 44, 30, c); else cv.fillRect(zx - 12, cy - 15, 24, 30, c);
                 });
-                cv.text(fl ? 'Lấp đầy' : 'Vừa khung', zx, cy + 76, 22, '#dddddd', { literal: true, align: 'center' });
+                cv.text(fl ? 'Vừa khung' : 'Lấp đầy', zx, cy + 76, 22, '#dddddd', { literal: true, align: 'center' });
             } else if (model.state === 'error' && model.id && model.connected) {
                 ctl('ov:play', cx, cy, 58, again, (c) => retryGlyph(cv, cx, cy, 26, c));
                 cv.text('Thử lại', cx, cy + 100, 26, '#dddddd', { literal: true, align: 'center' });
