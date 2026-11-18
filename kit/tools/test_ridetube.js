@@ -529,7 +529,12 @@ async function appFrames() {
         assert.strictEqual(disp.sheet.back(), null, 'back from a choice returns to settings');
         disp.closeSheet();
         disp.pageTargets.find((t) => t.key === 'rail:search').run();
-        assert.strictEqual(disp.sheet.title, 'Tìm kiếm', 'search opens the app-rendered menu');
+        await hu.loopFn();
+        const sk = keys();
+        assert.ok(sk.indexOf('q:bar') >= 0 && sk.indexOf('q:s:Music') >= 0 && sk.some((k) => /^q:r:/.test(k)), 'the rail\'s search is the Search page: bar, chips, recent: ' + sk);
+        assert.ok(sk.indexOf('rail:search') >= 0, 'with the rail');
+        hu.handlers.BTN_FIND();
+        assert.strictEqual(disp.sheet.title, 'Tìm kiếm', 'the Search button still opens the app-rendered menu');
         assert.ok(disp.sheet.rows().some((r) => r.label === 'Âm nhạc'));
         disp.sheet.focus = disp.sheet.rows().findIndex((r) => r.label === 'Kết quả');
         assert.strictEqual(disp.sheet.press(), 'close');
