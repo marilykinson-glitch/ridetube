@@ -1099,7 +1099,7 @@ Daemon.prototype.onLine = function (line) {
     case 'pause': return this.pause();
     case 'resume': return this.resume();
     case 'seek': return this.seek(m.ms);
-    case 'stop': return this.stop('idle');
+    case 'stop': this.stopSeq = (this.stopSeq || 0) + 1; return this.stop('idle');
     case 'video': return this.setVideo(!!m.on);
     case 'fill': return this.setFill(!!m.on);
     case 'quality': return this.requality(m.quality);
@@ -1203,12 +1203,18 @@ Daemon.prototype.pruneThumbs = function (tdir) {
 };
 
 // ---- playback
-// restore: {ms, paused} - a restart of the same video (Video quality): back to ms (even under 10 s), paused if it was
+// restore: {ms, paused, fill, height} - a restart of the same video (Video quality): back to ms (even under 10 s),
+// paused if it was. Any play keeps its start in this.restart until the first tick has put it there; Pause, Resume,
+// Seek and Fill that arrive meanwhile change it (the user's last word counts), Stop or another play cancels it.
 Daemon.prototype.play = async function (id, rect, fill, at, quality, skip, restore) {
     if (!ID_RE.test(String(id))) return this.emit({ ev: 'error', msg: 'bad id' });
     if (!/^\d{2,4}x\d{2,4}$/.test(String(rect))) rect = '1280x720';
+    const own = restore || { ms: 0, paused: false, height: qualityHeight(quality, readJson(this.opts.leaseFile)) };
+    own.restore = !!restore;
+    this.restart = own;
     await this.stop(null);
-    if (restore && restore.cur && this.cur !== restore.cur) return undefined;   // a quality restart that was stopped or replaced meanwhile
+    if (this.restart !== own) return undefined;   // stopped (or replaced) while it stopped the one before
+    if (own.fill !== undefined) fill = own.fill;
     const gen = ++this.gen;
     const dir = path.join(this.opts.cacheDir, id);
     try { fs.chmodSync(dir, VIDEO_DIR_MODE); } catch (e) { /* not fetched yet: fetchVideo makes it */ }   // (0700 before 0.3.9)
@@ -1217,8 +1223,7 @@ Daemon.prototype.play = async function (id, rect, fill, at, quality, skip, resto
         skip: Array.isArray(skip) ? skip.filter((x) => typeof x === 'string') : null, chapters: (readJson(path.join(dir, 'meta.json')) || {}).chapters };
     const was = this.positions()[id];
     // where it was left (here, else YouTube's own position the tile carried: at): seek there on the first tick
-    this.startAt = restore ? Math.max(1, Math.floor(restore.ms) || 0) : !this.opts.resume ? null : was ? (!was.done && was.ms > 10000 ? was.ms : null) : (Number(at) > 10000 ? Math.floor(Number(at)) : null);
-    this.pauseAfterSeek = !!(restore && restore.paused);   // paused at the restart: seek there on the first tick, then pause
+    if (!restore && !own.sought) own.ms = !this.opts.resume ? 0 : was ? (!was.done && was.ms > 10000 ? was.ms : 0) : (Number(at) > 10000 ? Math.floor(Number(at)) : 0);   // where it was left
     this.posAt = Date.now();
     this.pct = 0;
     this.fetchedMs = Infinity;
@@ -1439,13 +1444,19 @@ Daemon.prototype.stop = async function (reason) {
     this.killYtdec();
     await Promise.all([this.audio.release(), this.stopFetch()]);
     if (reason) {
+        this.restart = null;
         this.setState(reason);
         if (this.pos) this.sendPositions();
         this.cur = null;
         this.prune();          // a played video goes
     }
 };
+// a start under way that Pause, Resume and Seek must wait for: a quality restart (until its first tick: a setTime
+// before it is dropped) or a play that has not reached the player yet; they change this.restart, which the first tick applies
+Daemon.prototype.waiting = function () { return !!(this.restart && (this.restart.restore || !this.ticking)); };
 Daemon.prototype.pause = async function () {
+    if (this.restart) this.restart.paused = true;   // a start under way (not yet ticking): it comes up paused
+    if (this.waiting()) return;
     if (this.state !== 'playing') return;
     this.paused = true;
     this.toYtdec('pause');
@@ -1465,6 +1476,8 @@ Daemon.prototype.hold = function (ms) {
     return this.audio.button('STOP');
 };
 Daemon.prototype.resume = async function () {
+    if (this.restart) this.restart.paused = false;
+    if (this.waiting()) return;
     if (this.state !== 'paused') return;
     this.paused = false;
     this.lastProgress = Date.now();
@@ -1499,8 +1512,10 @@ Daemon.prototype.resume = async function () {
     await this.audio.button('PLAY');
 };
 Daemon.prototype.seek = async function (ms) {
-    if (this.state !== 'playing' && this.state !== 'paused') return;
     ms = Math.max(0, Math.floor(Number(ms) || 0));
+    if (this.restart) { this.restart.ms = ms; this.restart.sought = true; }   // the start under way ends there, not where it was left
+    if (this.waiting()) return;
+    if (this.state !== 'playing' && this.state !== 'paused') return;
     if (this.total) ms = Math.min(ms, Math.max(0, this.total - 1000));
     this.elapsed = ms;
     this.lastProgress = Date.now();
@@ -1523,6 +1538,7 @@ Daemon.prototype.setVideo = function (on) {
 // zoom while playing: ytdec again at the clock with the other mode (the sound plays on)
 Daemon.prototype.setFill = function (on) {
     const c = this.cur;
+    if (this.restart) this.restart.fill = on;   // (a quality restart under way: the new video starts in this mode)
     if (!c || c.fill === on) return;
     c.fill = on;
     if (!this.child) return; // the next ytdec takes it
@@ -1531,12 +1547,13 @@ Daemon.prototype.setFill = function (on) {
 };
 // Video quality while playing: the same video fetched again at that height, from where it is
 Daemon.prototype.requality = async function (quality) {
-    const c = this.cur;
-    if (!c || qualityHeight(quality, readJson(this.opts.leaseFile)) === c.height) return undefined;
-    const restore = { ms: this.elapsed, paused: this.state === 'paused' };   // (a paused one stays paused, where it is)
-    restore.cur = c;
+    const c = this.cur, h = qualityHeight(quality, readJson(this.opts.leaseFile)), was = this.restart;
+    if (!c || h === (was ? was.height : c.height)) return undefined;
+    // (a restart already under way: its place and mode carry over; the last quality asked wins)
+    const restore = { ms: was ? was.ms : this.elapsed, paused: was ? was.paused : this.state === 'paused', fill: was ? was.fill : undefined, height: h };
+    this.restart = restore;
     await this.stop(null);
-    if (this.cur !== c) return undefined;   // stopped (or another video asked) while it stopped: the restart is cancelled
+    if (this.restart !== restore) return undefined;   // stopped, replaced or asked again while it stopped: this restart is cancelled
     rmrf(c.dir);
     return this.play(c.id, c.rect, c.fill, null, quality, c.skip, restore);
 };
@@ -1555,11 +1572,13 @@ Daemon.prototype.onTime = function (v) {
         this.waitFull(v.elapsed).catch((e) => this.log(e));
         return;
     }
-    if (this.startAt) {
-        const at = this.startAt, pa = this.pauseAfterSeek;
-        this.startAt = null; this.pauseAfterSeek = false;
-        this.seek(at).then(() => (pa && this.state === 'playing' ? this.pause() : undefined)).catch((e) => this.log('resume at: ' + e));
-        return;
+    if (this.restart) {
+        const r = this.restart, at = Math.max(r.paused ? 1 : 0, Math.floor(r.ms) || 0), pa = !!r.paused;
+        this.restart = null;
+        if (at > 0) {
+            this.seek(at).then(() => (pa && this.state === 'playing' ? this.pause() : undefined)).catch((e) => this.log('resume at: ' + e));
+            return;
+        }
     }
     if (this.skipSegments()) return;
     this.savePos(false);

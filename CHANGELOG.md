@@ -1,5 +1,12 @@
 # Changelog
 
+## App 0.3.26, service 0.3.18
+
+- Pause, Resume, Seek and Fill sent while a video is starting (a quality change, or a new video) are no longer dropped:
+  the start comes up as the user last asked. A new video asked while another is starting, then Stop, stays stopped.
+- The quality being asked again during a restart: the last one wins, and the place and mode carry over.
+- `tools/test_sequences.js`: the command-sequence matrix; `--seed 12345 --cases 12` passes 50/50.
+
 ## App 0.3.25, service 0.3.17
 
 - Stop right after changing the video quality keeps the video stopped (the restart is cancelled; it used to start the old video again).
