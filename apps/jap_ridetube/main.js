@@ -121,6 +121,7 @@ mgu.run({
             model.onMsg(m);
             if (m.ev === 'error') log.warn('jap-ridetube-d: ' + m.msg);
             if (m.ev === 'state') log.info('jap-ridetube-d: ' + m.state + (m.id ? ' ' + m.id : ''));
+            if (m.ev === 'related') topUpQueue();
             if (m.ev === 'auth') { log.info('jap-ridetube-d: account ' + m.state); if (m.state === 'signed_in') openFeed(); }
             changed();
         });
@@ -215,12 +216,23 @@ mgu.run({
         });
         const QUALITIES = ['auto', '720', '480', '360'];   // app.json's Video quality values, in the button's order
         let queue = [], nextAt = 0;
+        const played = [];                                // the videos played in this run, newest last (related ones that were played are skipped)
+        // the list ran out: YouTube's own "up next" for the playing video carries on (the daemon's `related`)
+        function topUpQueue() {
+            if (queue.length || !model.related || model.related.id !== model.id) return;
+            queue = model.related.items.filter((r) => r && !r.act && /^[\w-]{11}$/.test(r.id) && played.indexOf(r.id) < 0 && r.id !== model.id && !r.members);
+            dirty = true;
+        }
         function play(id, it, list) {
             show('player');
             if (list) { const i = list.findIndex((r) => r.id === id); queue = list.slice(i + 1).filter((r) => r && !r.act && /^[\w-]{11}$/.test(r.id)); }
+            if (played.indexOf(id) < 0) played.push(id);
+            if (played.length > 200) played.shift();
             nextAt = 0;
             if (model.id === id && model.active()) return;
             model.play(id, rect(), fillEnabled(), it, { quality: settings.get('quality'), skip: sbSkip() });
+            model.loadRelated(id);
+            topUpQueue();
         }
         // from render: ended with a next one -> 5 s to see what comes, then it plays (back to the list cancels)
         function autoNext() {
@@ -318,8 +330,6 @@ mgu.run({
         const sbMode = (cat) => settings.get('sb_' + cat) || 'off';
         const sbSkip = () => SB.map((c) => c[0]).filter((c) => sbMode(c) === 'skip');
         const sbName = (cat) => (SB.find((c) => c[0] === cat) || [0, 'phân đoạn'])[1];
-        const sbSegs = (ex) => ex.segments.filter((g) => sbMode(g[2]) !== 'off');
-        const sbColor = (g) => (sbMode(g[2]) === 'ask' ? '#ffd400' : '#00d400');
         // the segment the clock is in whose category asks: its Skip button shows (and the overlay stays)
         function askSeg() {
             const ex = model.extras && model.extras.id === model.id ? model.extras : null, t = shownAt();
@@ -866,7 +876,6 @@ mgu.run({
             if (tot > 0) {
                 const el = shownAt(), bf = focusKey === 'ov:bar';
                 drawProgress(cv, x0, by, at(el) - x0, 10);
-                if (ex) sbSegs(ex).forEach((g) => cv.fillRect(at(g[0]), by, Math.max(4, at(g[1]) - at(g[0])), 10, sbColor(g)));
                 if (ex) ex.chapters.forEach((k) => { if (k[0] > 0) cv.fillRect(at(k[0]) - 2, by, 4, 10, C.bg); });
                 if (bf) cv.circle(at(el), by + 5, 24, '#3ea6ff');
                 cv.circle(at(el), by + 5, bf ? 18 : 14, el > 0 ? progressTip : C.red);
@@ -1019,7 +1028,6 @@ mgu.run({
                 const at = (ms) => x0 + Math.round(w * Math.min(1, ms / model.total)), ex = model.extras && model.extras.id === model.id ? model.extras : null;
                 cv.roundRect(x0, y, w, 6, 3, '#ffffff55');
                 drawProgress(cv, x0, y, fx - x0, 6);
-                if (ex) sbSegs(ex).forEach((g) => cv.fillRect(at(g[0]), y, Math.max(3, at(g[1]) - at(g[0])), 6, sbColor(g)));   // SponsorBlock: skipped green, asked yellow
                 if (ex) ex.chapters.forEach((c) => { if (c[0] > 0) cv.fillRect(at(c[0]) - 2, y, 4, 6, '#000000'); });
                 if (bf) cv.circle(fx, y + 3, 18, '#ffffff');
                 cv.circle(fx, y + 3, bf ? 14 : 10, el > 0 ? progressTip : C.red);

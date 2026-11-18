@@ -1094,6 +1094,7 @@ Daemon.prototype.onLine = function (line) {
     case 'positions': return this.sendPositions();
     case 'status': this.sendState(); if (this.total) this.emit({ ev: 'time', elapsed: this.elapsed, total: this.total }); return undefined;
     case 'search': return this.search(m.q);
+    case 'related': return this.related(m.id);
     case 'thumb': return this.thumb(m.id);
     case 'play': return this.play(m.id, m.rect, !!m.fill, m.at, m.quality, m.skip);
     case 'pause': return this.pause();
@@ -1155,6 +1156,30 @@ Daemon.prototype.search = async function (q) {
         return this.emit({ ev: 'error', msg: e.noUid ? e.message : 'search offline' });
     }
     return this.emit({ ev: 'results', q: q, items: feedItems(r.j).slice(0, FEED_MAX) });
+};
+// `related` {id} -> related{id, items}: what YouTube plays after it (the watch-next answer's tiles, wherever they sit),
+// so autoplay does not stop at the end of a list. Signed in when we can, anonymous otherwise; kept 10 min per video.
+Daemon.prototype.related = async function (id) {
+    if (!ID_RE.test(String(id))) return this.emit({ ev: 'error', msg: 'bad id' });
+    const c = this.relatedKept || (this.relatedKept = {}), k = c[id];
+    if (k && Date.now() - k.t < 600000) return this.emit({ ev: 'related', id: id, items: k.items });
+    const ask = (tok) => this.account.json('POST', YT + '/youtubei/v1/next', { context: { client: TV_CLIENT }, videoId: id },
+        tok ? { Authorization: 'Bearer ' + tok } : null);
+    let r;
+    try {
+        const tok = await this.account.token(false).catch(() => null);
+        r = await ask(tok);
+        if (r.status === 401 && tok) r = await ask(null);
+        if (r.status !== 200 || !r.j) throw new Error('next ' + r.status);
+    } catch (e) {
+        this.log('related ' + id + ': ' + e.message);
+        return this.emit({ ev: 'related', id: id, error: 'related offline' });
+    }
+    const items = feedItems(r.j).filter((x) => x.id !== id).slice(0, 30);
+    const keys = Object.keys(c);
+    if (keys.length > 20) delete c[keys[0]];
+    c[id] = { t: Date.now(), items: items };
+    return this.emit({ ev: 'related', id: id, items: items });
 };
 Daemon.prototype.thumb = async function (id) {
     if (!ID_RE.test(String(id))) return this.emit({ ev: 'error', msg: 'bad id' });

@@ -78,6 +78,7 @@ const fakeYt = async (method, url, headers, body) => {
     if (url === 'https://www.youtube.com/o/oauth2/token') { const r = yt.token(body); return json(r, r.error ? 400 : 200); }
     if (url === 'https://www.youtube.com/youtubei/v1/browse') return yt.browse(headers, body);
     if (url === 'https://www.youtube.com/youtubei/v1/search') return yt.search(headers, body);
+    if (url === 'https://www.youtube.com/youtubei/v1/next') return yt.next(headers, body);
     if (url.indexOf('https://sponsor.ajay.app/api/skipSegments/') === 0 && yt.sb) return yt.sb(url);
     if (url === 'https://www.youtube.com/youtubei/v1/player') return json({ playbackTracking: { videostatsPlaybackUrl: { baseUrl: 'https://s.youtube.com/api/stats/playback?docid=x&ei=E' }, videostatsWatchtimeUrl: { baseUrl: 'https://s.youtube.com/api/stats/watchtime?docid=x&ei=E' } } });
     if (url.indexOf('https://s.youtube.com/api/stats/') === 0) return { status: 204, body: '' };
@@ -808,6 +809,22 @@ async function main() {
         const st = c.evs.filter((x) => x.ev === 'state').map((x) => x.state);
         assert.strictEqual(st[st.length - 1], 'idle', 'still idle: ' + st.join());
         assert.ok(!st.slice(st.indexOf('idle') + 1).length, 'nothing after idle: ' + st.join());
+    });
+
+    await t('related: the watch-next answer\'s videos (not the video itself), asked once per 10 min', async () => {
+        c.clear(); yt.calls.length = 0;
+        const nxt = { contents: { a: [tile('RELATED0001', 'TILE_CONTENT_TYPE_VIDEO', 'Next one', 'Chan N', '3:00'), tile('PLAYING0001', 'TILE_CONTENT_TYPE_VIDEO', 'Itself', 'Chan P', '3:00'), tile('RELATED0002', 'TILE_CONTENT_TYPE_VIDEO', 'Then', 'Chan N', '4:00')] } };
+        const hit = (h, b) => ok(nxt);
+        const keep = yt.next; yt.next = hit;
+        c.send({ cmd: 'related', id: 'PLAYING0001' });
+        const e = await c.waitFor((x) => x.ev === 'related' && x.id === 'PLAYING0001');
+        assert.deepStrictEqual(e.items.map((x) => x.id), ['RELATED0001', 'RELATED0002']);
+        c.send({ cmd: 'related', id: 'PLAYING0001' });
+        await c.waitFor((x) => x.ev === 'related' && x !== e);
+        assert.strictEqual(ytCalls('/youtubei/v1/next').length, 1, 'the second ask comes from the 10 min cache');
+        c.send({ cmd: 'related', id: 'bad' });
+        await c.waitFor((x) => x.ev === 'error' && x.msg === 'bad id');
+        yt.next = keep;
     });
 
     await t('auth_status with no account: signed out', async () => {

@@ -1,5 +1,10 @@
 # Changelog
 
+## App 0.3.27, service 0.3.19
+
+- Autoplay no longer stops at "Đã phát xong": when the list runs out, the video YouTube plays next (watch-next) carries on. New daemon command `related`.
+- The progress bar no longer shows SponsorBlock segments in green or yellow (they are still skipped, and the Skip button stays).
+
 ## App 0.3.26, service 0.3.18
 
 - Pause, Resume, Seek and Fill sent while a video is starting (a quality change, or a new video) are no longer dropped:

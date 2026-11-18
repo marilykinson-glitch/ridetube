@@ -211,6 +211,14 @@ async function clientAndModel() {
     m.feed('wl');
     d.send({ ev: 'feed', which: 'wl', error: 'feed offline' });
     await until(() => m.feeds.wl.error === 'feed offline', 2000, 'feed error');
+    // up next: asked once per video, kept only for the video playing
+    m.id = 'PLAYING0001';
+    assert.ok(m.loadRelated('PLAYING0001') && !m.loadRelated('PLAYING0001'), 'asked once');
+    await until(() => d.cmds('related').length === 1, 2000, 'related cmd');
+    d.send({ ev: 'related', id: 'OTHER000001', items: [{ id: 'RELATED0001', title: 'x' }] });
+    d.send({ ev: 'related', id: 'PLAYING0001', items: [{ id: 'RELATED0001', title: 'Next' }, { bad: 1 }] });
+    await until(() => m.related, 2000, 'related answer');
+    assert.deepStrictEqual(m.related.items.map((x) => x.id), ['RELATED0001'], 'only the playing video\'s answer');
     // Library: playlists (VL ids only), the history and liked feeds are feeds like the others
     assert.ok(m.loadPlaylists() && m.lists.loading);
     await until(() => d.cmds('playlists').length === 1, 2000, 'playlists cmd');

@@ -106,6 +106,7 @@ class Model {
         this.extras = null;          // the playing video's {id, chapters: [[ms, title]], segments: [[ms, ms, category]]}
         this.toast = null;           // {text, until}: a skipped sponsor
         this.chans = null;           // the subscribed channels: {items:[{id,title,handle}], loading, error, t}
+        this.related = null;         // what plays after the video playing: {id, items} (the daemon's watch-next answer)
         this.lists = null;           // the account's playlists: {items:[{id: VL..., title, sub}], loading, error, t}
         this.chan = null;            // the channel (or playlist) page shown: {id, title, items, shelves, loading, error, t}
         this.rev = 0;                // bumped on every change the screens show
@@ -160,6 +161,10 @@ class Model {
                 this.chans.items = (Array.isArray(m.items) ? m.items : []).filter((c) => c && /^UC[\w-]{22}$/.test(c.id))
                     .map((c) => ({ id: c.id, title: String(c.title || c.id), handle: String(c.handle || ''), key: fold(c.title) }));
             }
+        } else if (m.ev === 'related') {
+            if (m.error || m.id !== this.id) return;                                    // none, or for a video no longer playing
+            this.related = { id: m.id, items: valid(m.items, 30) };
+            this._prune();
         } else if (m.ev === 'playlists') {
             if (!this.lists) return;
             this.lists.loading = false;
@@ -218,7 +223,7 @@ class Model {
     _items() {
         const f = FEEDS.map((w) => this.feeds[w]).filter(Boolean);
         if (this.chan) f.push(this.chan);
-        return this.results.concat(this.resume, ...f.map((x) => x.items || []), ...f.map((x) => [].concat(...(x.shelves || []).map((s) => s.items))));
+        return this.results.concat(this.resume, (this.related && this.related.items) || [], ...f.map((x) => x.items || []), ...f.map((x) => [].concat(...(x.shelves || []).map((s) => s.items))));
     }
     _known(id) { return this._items().some((r) => r.id === id); }
     /** an item by its id (the first list that has it), or null */
@@ -328,6 +333,12 @@ class Model {
         if (this.send({ cmd: 'channels' })) return true;
         c.loading = false; c.error = 'Dịch vụ phát video chưa chạy (jap-ridetube-d)';
         return false;
+    }
+    /** ask what plays after video id (once per video; the answer comes as `related`) */
+    loadRelated(id) {
+        if (!this.connected || (this.related && this.related.id === id) || this.relatedAsked === id) return false;
+        this.relatedAsked = id;
+        return this.send({ cmd: 'related', id });
     }
     /** (re)load the account's playlists (the daemon keeps them 5 min); shown meanwhile */
     loadPlaylists() {
