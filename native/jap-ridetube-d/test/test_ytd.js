@@ -713,7 +713,7 @@ async function main() {
         await sleep(150);
         d.switching = false;
         assert.ok(!c.evs.some((x) => x.ev === 'error' || x.state === 'error'), 'no error during the switch');
-        assert.strictEqual(called('release').length, 0, 'audio connection kept');
+        assert.strictEqual(called('disconnect').length, 0, 'audio connection kept');
         await stopIdle();
     });
 
