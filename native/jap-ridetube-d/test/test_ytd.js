@@ -771,6 +771,31 @@ async function main() {
         await c.waitFor((x) => x.ev === 'state' && x.state === 'idle');
     });
 
+    await t('quality while playing: back to where it was even under 10 s, and a paused video stays paused', async () => {
+        fs.writeFileSync(ctl, ''); setMode('ok');
+        const id = 'FFFFFFFFFF8';
+        await fetchPlay(id);
+        tick(5000);
+        await sleep(100);
+        c.clear(); calls.length = 0;
+        c.send({ cmd: 'quality', quality: '480' });
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'playing', 4000);
+        await sleep(100); tick(0);
+        await waitUntil(() => called('setTime').length > 0);
+        assert.deepStrictEqual(called('setTime').map((x) => x.a.newTimeElapsed), [5000], 'the 5 s it was at, not 0');
+        // paused: stays paused after the restart
+        c.send({ cmd: 'pause' });
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'paused');
+        c.clear(); calls.length = 0;
+        c.send({ cmd: 'quality', quality: '360' });
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'playing', 4000);
+        await sleep(100); tick(0);
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'paused', 4000);
+        assert.ok(c.evs.filter((x) => x.ev === 'state').pop().state === 'paused', 'paused again, not playing');
+        c.send({ cmd: 'stop' });
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'idle');
+    });
+
     await t('auth_status with no account: signed out', async () => {
         c.clear();
         c.send({ cmd: 'auth_status' });

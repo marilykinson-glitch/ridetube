@@ -1,5 +1,10 @@
 # Changelog
 
+## App 0.3.24, service 0.3.16
+
+- Changing the video quality keeps a paused video paused (it started playing again).
+- Changing the video quality in the first 10 seconds comes back to where it was (it restarted from 0).
+
 ## App 0.3.23, service 0.3.15
 
 - Video quality changed in Settings now applies to the video playing (as the player's button did); both go through one path.

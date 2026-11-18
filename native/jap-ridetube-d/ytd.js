@@ -1203,7 +1203,8 @@ Daemon.prototype.pruneThumbs = function (tdir) {
 };
 
 // ---- playback
-Daemon.prototype.play = async function (id, rect, fill, at, quality, skip) {
+// restore: {ms, paused} - a restart of the same video (Video quality): back to ms (even under 10 s), paused if it was
+Daemon.prototype.play = async function (id, rect, fill, at, quality, skip, restore) {
     if (!ID_RE.test(String(id))) return this.emit({ ev: 'error', msg: 'bad id' });
     if (!/^\d{2,4}x\d{2,4}$/.test(String(rect))) rect = '1280x720';
     await this.stop(null);
@@ -1215,7 +1216,8 @@ Daemon.prototype.play = async function (id, rect, fill, at, quality, skip) {
         skip: Array.isArray(skip) ? skip.filter((x) => typeof x === 'string') : null, chapters: (readJson(path.join(dir, 'meta.json')) || {}).chapters };
     const was = this.positions()[id];
     // where it was left (here, else YouTube's own position the tile carried: at): seek there on the first tick
-    this.startAt = !this.opts.resume ? null : was ? (!was.done && was.ms > 10000 ? was.ms : null) : (Number(at) > 10000 ? Math.floor(Number(at)) : null);
+    this.startAt = restore ? Math.max(1, Math.floor(restore.ms) || 0) : !this.opts.resume ? null : was ? (!was.done && was.ms > 10000 ? was.ms : null) : (Number(at) > 10000 ? Math.floor(Number(at)) : null);
+    this.pauseAfterSeek = !!(restore && restore.paused);   // paused at the restart: seek there on the first tick, then pause
     this.posAt = Date.now();
     this.pct = 0;
     this.fetchedMs = Infinity;
@@ -1530,9 +1532,10 @@ Daemon.prototype.setFill = function (on) {
 Daemon.prototype.requality = async function (quality) {
     const c = this.cur;
     if (!c || qualityHeight(quality, readJson(this.opts.leaseFile)) === c.height) return undefined;
+    const restore = { ms: this.elapsed, paused: this.state === 'paused' };   // (a paused one stays paused, where it is)
     await this.stop(null);
     rmrf(c.dir);
-    return this.play(c.id, c.rect, c.fill, null, quality, c.skip);
+    return this.play(c.id, c.rect, c.fill, null, quality, c.skip, restore);
 };
 
 // ---- MediaPlayer events
@@ -1549,7 +1552,12 @@ Daemon.prototype.onTime = function (v) {
         this.waitFull(v.elapsed).catch((e) => this.log(e));
         return;
     }
-    if (this.startAt) { const at = this.startAt; this.startAt = null; this.seek(at).catch((e) => this.log('resume at: ' + e)); return; }
+    if (this.startAt) {
+        const at = this.startAt, pa = this.pauseAfterSeek;
+        this.startAt = null; this.pauseAfterSeek = false;
+        this.seek(at).then(() => (pa && this.state === 'playing' ? this.pause() : undefined)).catch((e) => this.log('resume at: ' + e));
+        return;
+    }
     if (this.skipSegments()) return;
     this.savePos(false);
     if (this.cur.track && Date.now() - this.cur.track.at > 60000) this.ping(this.cur, true);
