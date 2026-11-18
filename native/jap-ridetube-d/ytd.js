@@ -1655,6 +1655,12 @@ Daemon.prototype.onPlaybackError = function (v) {
         if (!this.headWait && !this.switching) this.waitFull(this.elapsed).catch((e) => this.log(e));
         return;
     }
+    // while the head is replaced by the full file (or the player waits for it) the old file running dry is expected:
+    // switchToFull / onFullAudio carry on from here, so this is neither an error nor a reason to restart the player
+    if (underrun && (this.switching || this.headWait)) {
+        this.log('audio: underrun during the head -> full switch, ignored');
+        return;
+    }
     if (underrun && !this.switching && !this.headWait) {
         const now = Date.now();
         this.underruns = (this.underruns || []).filter((t) => now - t < 60000);

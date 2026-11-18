@@ -703,6 +703,20 @@ async function main() {
         await stopIdle();
     });
 
+    await t('ITEM_BUFFER_UNDERRUN while switching head -> full (or waiting for it): ignored, no error, the switch completes', async () => {
+        const id = 'FFFFFFFFFU3';
+        await headPlay(id, 'hold');
+        tick(10000);
+        c.clear();
+        d.switching = true;                       // (what switchToFull sets for the length of the switch)
+        subs.playbackErrorEvent({ event: 'ITEM_BUFFER_UNDERRUN' });
+        await sleep(150);
+        d.switching = false;
+        assert.ok(!c.evs.some((x) => x.ev === 'error' || x.state === 'error'), 'no error during the switch');
+        assert.strictEqual(called('release').length, 0, 'audio connection kept');
+        await stopIdle();
+    });
+
     await t('ITEM_BUFFER_UNDERRUN on the full file: the player is started again there (3 a minute); other errors stay errors', async () => {
         fs.writeFileSync(ctl, ''); setMode('ok');
         const id = 'FFFFFFFFFU2';

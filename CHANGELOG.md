@@ -1,5 +1,9 @@
 # Changelog
 
+## App 0.3.30, service 0.3.22
+
+- `ITEM_BUFFER_UNDERRUN` arriving while the audio switches from the temporary head file to the full file (or waits for it) is ignored instead of ending in the error screen with the audio connection closed.
+
 ## App 0.3.29, service 0.3.21
 
 - Stop, then a new video at once: the old Stop finishing late no longer clears the new video's state (it ended in `Cannot read properties of null` and no picture or sound).
