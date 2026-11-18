@@ -1642,8 +1642,28 @@ Daemon.prototype.onPlayerState = function (v) {
         this.setState('paused');
     }
 };
+// ITEM_BUFFER_UNDERRUN (car, 2026-11-18, a long video): the player ran out of audio it had been given. It is not the end of the
+// video: on the head file the full audio is not there yet (wait for it, as when the head ends); on the full file the player
+// is started again where it was (pause + resume), up to 3 times a minute, then it is an error as any other.
 Daemon.prototype.onPlaybackError = function (v) {
     if (!this.ticking) return;
+    const underrun = v && v.event === 'ITEM_BUFFER_UNDERRUN' && (this.state === 'playing' || this.state === 'paused');
+    if (underrun && this.head && !this.fullReady) {
+        this.log('audio: underrun on the head at ' + this.elapsed + ', waiting for audio.m4a');
+        if (!this.headWait && !this.switching) this.waitFull(this.elapsed).catch((e) => this.log(e));
+        return;
+    }
+    if (underrun && !this.switching && !this.headWait) {
+        const now = Date.now();
+        this.underruns = (this.underruns || []).filter((t) => now - t < 60000);
+        if (this.underruns.length < 3) {
+            this.underruns.push(now);
+            this.log('audio: underrun at ' + this.elapsed + ', starting the player again there');
+            if (this.state !== 'playing') return;   // paused: the player is stopped, nothing to start again
+            (async () => { await this.pause(); await this.resume(); })().catch((e) => this.log('underrun recovery: ' + e));
+            return;
+        }
+    }
     this.failPlayback('playback error ' + JSON.stringify(v)).catch((e) => this.log(e));
 };
 

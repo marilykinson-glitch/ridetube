@@ -673,6 +673,18 @@ async function main() {
         await stopIdle();
     });
 
+    await t('ITEM_BUFFER_UNDERRUN on the head: waits for audio.m4a (buffering), no error; then plays on', async () => {
+        const id = 'FFFFFFFFFU1';
+        await headPlay(id, 'hold');
+        c.clear();
+        subs.playbackErrorEvent({ event: 'ITEM_BUFFER_UNDERRUN' });
+        await c.waitFor((x) => x.ev === 'state' && x.buffering === true);
+        assert.ok(!c.evs.some((x) => x.ev === 'error' || x.state === 'error'), 'no error');
+        fs.writeFileSync(ctl, 'done');
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'playing' && x.buffering === false);
+        await stopIdle();
+    });
+
     await t('paused on the head when audio.m4a arrives: no switch until resume, which plays audio.m4a at that point', async () => {
         const id = 'FFFFFFFFFH5';
         await headPlay(id, 'hold');
@@ -688,6 +700,22 @@ async function main() {
         assert.strictEqual(path.basename(called('playFile').slice(-1)[0].a.path), 'audio.m4a');
         assert.deepStrictEqual(called('setTime')[0].a, { newTimeElapsed: 15000 });
         assert.ok(!called('sendButtonEvent').some((x) => x.a.button === 'PLAY'));
+        await stopIdle();
+    });
+
+    await t('ITEM_BUFFER_UNDERRUN on the full file: the player is started again there (3 a minute); other errors stay errors', async () => {
+        fs.writeFileSync(ctl, ''); setMode('ok');
+        const id = 'FFFFFFFFFU2';
+        await fetchPlay(id);
+        tick(5000); await sleep(50);
+        calls.length = 0; c.clear();
+        subs.playbackErrorEvent({ event: 'ITEM_BUFFER_UNDERRUN' });
+        await waitUntil(() => called('playFile').length === 1, 4000);
+        await sleep(300);
+        assert.ok(!c.evs.some((x) => x.ev === 'error' || x.state === 'error'), 'recovered, no error');
+        assert.strictEqual(c.evs.filter((x) => x.ev === 'state').pop().state, 'playing');
+        subs.playbackErrorEvent({ event: 'SOMETHING_ELSE' });
+        await c.waitFor((x) => x.ev === 'error' && /playback error/.test(x.msg));
         await stopIdle();
     });
 

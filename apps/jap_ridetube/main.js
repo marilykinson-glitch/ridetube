@@ -66,7 +66,7 @@ const SUGGEST = new Map([
 const SLOTS = ['BTN_S1', 'BTN_S2', 'BTN_S3', 'BTN_S4', 'BTN_S5', 'BTN_S6'];
 const TABS = ['home', 'subs', 'wl'];
 const VI = require('./vi');
-const NAMES = { home: 'Trang chủ', subs: 'Kênh đăng ký', wl: 'Xem sau', hist: 'Lịch sử', liked: 'Video đã thích', lib: 'Thư viện', results: 'Kết quả' };
+const NAMES = { home: 'Trang chủ', subs: 'Kênh đăng ký', wl: 'Xem sau', hist: 'Lịch sử', liked: 'Video đã thích', lib: 'Thư viện', results: 'Kết quả', search: 'Tìm kiếm' };
 const FEED_MS = 15000;                                   // a feed with no answer by then is an error on screen
 const SIGNIN_URL = 'https://www.google.com/device';
 
@@ -515,7 +515,7 @@ mgu.run({
                 if (on) cv.roundRect(18, y, 90, tileH, 16, bg);
                 glyph(cv, cx, cy - 8, c, bg);
                 cv.text(name === 'Kênh đăng ký' ? 'Đăng ký' : name, cx, y + tileH - 9, 16, c, { literal: true, align: 'center', font: on ? 'bold' : 'label' });
-                if (cv.own) cv.target(16, y, 92, tileH, () => (m === 'settings' ? openSettings() : m === 'search' ? openSearch() : show(m)), 'rail:' + m, 16);
+                if (cv.own) cv.target(16, y, 92, tileH, () => (m === 'settings' ? openSettings() : m === 'search' ? show('search') : show(m)), 'rail:' + m, 16);
             });
         }
 
@@ -727,6 +727,52 @@ mgu.run({
             if (model.searchError) return say(cv, 'Tìm kiếm: ' + VI.error(model.searchError), 'Mở Tìm kiếm để thử lại');
             if (!model.results.length) return say(cv, model.q ? 'Không tìm thấy kết quả cho "' + model.q + '"' : 'Chọn Tìm kiếm để tìm video', model.q ? 'Thử từ khóa khác' : null);
             drawPage(cv, [{ title: 'Kết quả cho “' + model.q + '”', items: shown(model.results), grid: true }]);
+        }
+        // Search (where the kit runs the screen): a big search bar that opens the keyboard, the suggestions as chips,
+        // the recent searches as a list (a tap on one searches it again)
+        function drawSearch(cv) {
+            const x0 = X0, w = W - X0 - 40, bottom = H + (cv.own ? cv.extra : 0);
+            cv.clip(RAIL_W, TOP, W - RAIL_W, bottom - TOP);
+            const hit = (x, y, ww, hh, run, key) => { if (cv.own) cv.target(x - 6, y - 6, ww + 12, hh + 12, run, key, 18); };
+            const ring = (key, x, y, ww, hh, r) => { if (key === focusKey) cv.roundRect(x - 6, y - 6, ww + 12, hh + 12, r + 6, C.card); };
+            // the bar
+            const by = TOP + 22, bh = 78;
+            ring('q:bar', x0, by, w, bh, 39);
+            cv.roundRect(x0, by, w, bh, 39, '#272727');
+            cv.arc(x0 + 48, by + 36, 12, 16, 0, 360, '#ffffff');
+            cv.line(x0 + 57, by + 45, x0 + 68, by + 56, 5, '#ffffff');
+            cv.text('Tìm video', x0 + 96, by + 52, 32, C.dim, LIT);
+            hit(x0, by, w, bh, askSearch, 'q:bar');
+            // suggestions
+            let y = by + bh + 44;
+            cv.text('Gợi ý', x0, y, 28, '#ffffff', LITB);
+            y += 24;
+            let cx = x0;
+            Array.from(SUGGEST.entries()).forEach(([q, label]) => {
+                const cw = cv.textWidth(label, 26, LIT) + 52;
+                if (cx + cw > x0 + w) { cx = x0; y += 68; }
+                const key = 'q:s:' + q;
+                ring(key, cx, y, cw, 52, 26);
+                cv.roundRect(cx, y, cw, 52, 26, '#272727');
+                cv.text(label, cx + 26, y + 36, 26, '#ffffff', LIT);
+                hit(cx, y, cw, 52, () => search(q), key);
+                cx += cw + 16;
+            });
+            // recent
+            y += 52 + 44;
+            cv.text('Tìm kiếm gần đây', x0, y, 28, '#ffffff', LITB);
+            y += 18;
+            if (!recent.length) cv.text('Những từ khóa bạn tìm sẽ hiện ở đây', x0, y + 44, 24, C.dim, LIT);
+            recent.forEach((q, i) => {
+                const ry = y + i * 62;
+                if (ry + 56 > bottom) return;
+                const key = 'q:r:' + i;
+                ring(key, x0, ry, w, 56, 14);
+                cv.arc(x0 + 30, ry + 28, 12, 15, 0, 360, '#aaaaaa'); cv.line(x0 + 30, ry + 29, x0 + 30, ry + 21, 3, '#aaaaaa'); cv.line(x0 + 30, ry + 29, x0 + 36, ry + 33, 3, '#aaaaaa');
+                cv.text(fit(cv, q, 28, w - 120, LIT), x0 + 76, ry + 38, 28, '#ffffff', LIT);
+                hit(x0, ry, w, 56, () => search(q), key);
+            });
+            cv.noclip();
         }
         const EMPTY = { wl: ['Danh sách Xem sau đang trống', 'Video lưu để xem sau sẽ xuất hiện ở đây'],
             hist: ['Lịch sử xem đang trống', 'Video bạn đã xem sẽ xuất hiện ở đây'], liked: ['Chưa có video đã thích', 'Video bạn bấm Thích sẽ xuất hiện ở đây'] };
@@ -1073,7 +1119,7 @@ mgu.run({
                 if (mode === 'player' && cv.own && cv.place && cv.place.full) drawFull(cv);
                 else {
                     if (browsing()) drawRail(cv);
-                    if (mode === 'player') drawPlayer(cv); else if (mode === 'channel') drawChannel(cv); else if (mode === 'results') drawResults(cv); else if (mode === 'lib') drawLib(cv); else drawFeed(cv, isFeed(mode) ? mode : 'home');
+                    if (mode === 'player') drawPlayer(cv); else if (mode === 'channel') drawChannel(cv); else if (mode === 'results') drawResults(cv); else if (mode === 'search') drawSearch(cv); else if (mode === 'lib') drawLib(cv); else drawFeed(cv, isFeed(mode) ? mode : 'home');
                     // where the kit runs the screen the rail has the pages: the header shows just the name
                     if (cv.own) G.frame(cv, theme(), [], -1);
                     else {

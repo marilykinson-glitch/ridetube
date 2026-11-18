@@ -1,5 +1,10 @@
 # Changelog
 
+## App 0.3.28, service 0.3.20
+
+- Search is now a page in the app (YouTube style) instead of the BMW menu: a big search bar that opens the keyboard, suggestion chips, and the recent searches (tap one to search again).
+- Playback error `ITEM_BUFFER_UNDERRUN` (long videos) no longer ends in the error screen: on the head file it waits for the full audio, on the full file it restarts the player where it was (3 times a minute at most).
+
 ## App 0.3.27, service 0.3.19
 
 - Autoplay no longer stops at "Đã phát xong": when the list runs out, the video YouTube plays next (watch-next) carries on. New daemon command `related`.
