@@ -1,5 +1,9 @@
 # Changelog
 
+## App 0.3.29, service 0.3.21
+
+- Stop, then a new video at once: the old Stop finishing late no longer clears the new video's state (it ended in `Cannot read properties of null` and no picture or sound).
+
 ## App 0.3.28, service 0.3.20
 
 - Search is now a page in the app (YouTube style) instead of the BMW menu: a big search bar that opens the keyboard, suggestion chips, and the recent searches (tap one to search again).

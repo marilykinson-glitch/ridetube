@@ -1464,10 +1464,12 @@ Daemon.prototype.stop = async function (reason) {
         const p = this.cur && this.pos && this.pos[this.cur.id];
         if (this.cur && this.cur.track) this.ping(this.cur, true, !!(p && p.done));
     }
-    this.gen++;
+    const g = ++this.gen;
     this.ticking = false;
     this.killYtdec();
     await Promise.all([this.audio.release(), this.stopFetch()]);
+    // another stop or a new play came in while this one waited: it owns the state now (a late tail would wipe the new video)
+    if (g !== this.gen) return;
     if (reason) {
         this.restart = null;
         this.setState(reason);
