@@ -827,6 +827,12 @@ async function main() {
             await c.waitFor((x) => x.ev === 'feed' && x.which === w);
             assert.strictEqual(ytCalls('/browse').pop().body.browseId, id);
         }
+        const big = { a: Array.from({ length: 130 }, (_, i) => tile('LONG' + String(i).padStart(7, '0'), 'TILE_CONTENT_TYPE_VIDEO', 'L' + i, 'Chan', '1:00')) };
+        const keep = yt.browse; yt.browse = () => ok(big);
+        c.send({ cmd: 'feed', which: 'liked' });
+        const lk = await c.waitFor((x) => x.ev === 'feed' && x.which === 'liked' && x.items);
+        assert.strictEqual(lk.items.length, 100, 'a long list: up to 100, not 50');
+        yt.browse = keep;
         c.send({ cmd: 'feed', which: 'nope' });
         await c.waitFor((x) => x.ev === 'feed' && x.which === 'nope' && x.error === 'unknown feed');
         c.send({ cmd: 'search', q: 'bunny' });

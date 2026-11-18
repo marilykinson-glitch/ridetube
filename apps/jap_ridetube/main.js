@@ -208,6 +208,7 @@ mgu.run({
         // list: the row it was picked from; the videos after it play next when one ends (autoplay)
         const fillEnabled = () => settings.get('fill') === true;
         settings.onChange((key) => {
+            if (key === 'quality') { model.quality(String(settings.get('quality') || 'auto')); dirty = true; return; }   // (the player's button sets it too: one path)
             if (key !== 'fill') return;
             model.fill(fillEnabled());
             dirty = true;
@@ -998,7 +999,7 @@ mgu.run({
                 skip('ov:ff', cx + 210, 1, 10000);
                 // right: Video quality (a press takes the next one; the video starts again there) and zoom (fill crops)
                 const qv = String(settings.get('quality') || 'auto'), fl = fillEnabled(), qx = SW - 330, zx = SW - 150;
-                ctl('ov:q', qx, cy, 42, () => { const q = QUALITIES[(QUALITIES.indexOf(qv) + 1) % QUALITIES.length]; settings.set('quality', q); model.quality(q); },
+                ctl('ov:q', qx, cy, 42, () => { const q = QUALITIES[(QUALITIES.indexOf(qv) + 1) % QUALITIES.length]; settings.set('quality', q); },
                     (c) => cv.text(qv === 'auto' ? 'Tự động' : qv + 'p', qx, cy + 8, 22, c, { literal: true, font: 'bold', align: 'center' }));
                 cv.text('Chất lượng', qx, cy + 76, 22, '#dddddd', { literal: true, align: 'center' });
                 ctl('ov:zoom', zx, cy, 42, () => settings.set('fill', !fillEnabled()), (c) => {

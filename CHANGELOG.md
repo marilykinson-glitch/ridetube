@@ -1,5 +1,10 @@
 # Changelog
 
+## App 0.3.23, service 0.3.15
+
+- Video quality changed in Settings now applies to the video playing (as the player's button did); both go through one path.
+- The service sends up to 100 videos for History, Liked videos, playlists and searches (it cut them at 50).
+
 ## App 0.3.22, service 0.3.14
 
 - Playlists, History, Liked videos and search results show up to 100 videos (they were cut at 20, search at 10).
