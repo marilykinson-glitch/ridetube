@@ -1,5 +1,9 @@
 # Changelog
 
+## App 0.3.25, service 0.3.17
+
+- Stop right after changing the video quality keeps the video stopped (the restart is cancelled; it used to start the old video again).
+
 ## App 0.3.24, service 0.3.16
 
 - Changing the video quality keeps a paused video paused (it started playing again).

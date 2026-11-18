@@ -1208,6 +1208,7 @@ Daemon.prototype.play = async function (id, rect, fill, at, quality, skip, resto
     if (!ID_RE.test(String(id))) return this.emit({ ev: 'error', msg: 'bad id' });
     if (!/^\d{2,4}x\d{2,4}$/.test(String(rect))) rect = '1280x720';
     await this.stop(null);
+    if (restore && restore.cur && this.cur !== restore.cur) return undefined;   // a quality restart that was stopped or replaced meanwhile
     const gen = ++this.gen;
     const dir = path.join(this.opts.cacheDir, id);
     try { fs.chmodSync(dir, VIDEO_DIR_MODE); } catch (e) { /* not fetched yet: fetchVideo makes it */ }   // (0700 before 0.3.9)
@@ -1533,7 +1534,9 @@ Daemon.prototype.requality = async function (quality) {
     const c = this.cur;
     if (!c || qualityHeight(quality, readJson(this.opts.leaseFile)) === c.height) return undefined;
     const restore = { ms: this.elapsed, paused: this.state === 'paused' };   // (a paused one stays paused, where it is)
+    restore.cur = c;
     await this.stop(null);
+    if (this.cur !== c) return undefined;   // stopped (or another video asked) while it stopped: the restart is cancelled
     rmrf(c.dir);
     return this.play(c.id, c.rect, c.fill, null, quality, c.skip, restore);
 };

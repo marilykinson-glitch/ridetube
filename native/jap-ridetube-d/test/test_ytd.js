@@ -796,6 +796,20 @@ async function main() {
         await c.waitFor((x) => x.ev === 'state' && x.state === 'idle');
     });
 
+    await t('quality then Stop at once: the video stays stopped (the restart is cancelled)', async () => {
+        fs.writeFileSync(ctl, ''); setMode('ok');
+        const id = 'FFFFFFFFFF9';
+        await fetchPlay(id);
+        c.clear();
+        c.send({ cmd: 'quality', quality: '480' });
+        c.send({ cmd: 'stop' });
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'idle');
+        await sleep(800);
+        const st = c.evs.filter((x) => x.ev === 'state').map((x) => x.state);
+        assert.strictEqual(st[st.length - 1], 'idle', 'still idle: ' + st.join());
+        assert.ok(!st.slice(st.indexOf('idle') + 1).length, 'nothing after idle: ' + st.join());
+    });
+
     await t('auth_status with no account: signed out', async () => {
         c.clear();
         c.send({ cmd: 'auth_status' });
