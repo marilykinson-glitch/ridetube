@@ -545,6 +545,7 @@ async function appFrames() {
         assert.ok(ks.indexOf('rail:player') < 0, 'nothing playing: no Playing');
         assert.ok(ks.indexOf('r:0:lib1') > 3 && ks.indexOf('r:0:lib2') > 3, 'then the tiles: ' + ks);
         // the controller on a tile, pressed: the player; pushed left: back on that tile
+        await hu.loopFn();
         disp.onPageFocus('r:0:lib1');
         disp.pageTargets.find((t) => t.key === 'r:0:lib1').run();
         await hu.loopFn();
