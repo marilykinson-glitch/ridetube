@@ -23,7 +23,7 @@ const net = require('net');
 const SOCKET = '/run/jap-ridetube-d/ctl.sock';
 const MAX_LINE = 1 << 20;            // a 320x180 thumb is 307 kB of base64; anything far past that is not ours
 const FEEDS = ['home', 'subs', 'wl', 'hist', 'liked'];
-const FEED_MAX = 20;                 // a feed's flat list (its pictures: as many as drawn, main.js's pool)
+const FEED_MAX = 100;                // a feed's, a playlist's or a search's flat list (thumbs are asked only for the tiles drawn)
 const SHELVES = 8, SHELF_MAX = 12;   // a feed's shelves, the videos in each
 const SIZES = ['160x90', '320x180']; // the thumb sizes the daemon sends
 
@@ -127,7 +127,7 @@ class Model {
         if (m.ev === 'results') {
             if (this.q !== null && m.q !== undefined && m.q !== this.q) return;     // an older search's answer
             this.searching = false; this.searchError = null;
-            this.results = valid(m.items);
+            this.results = valid(m.items, FEED_MAX);
             this._prune();
         } else if (m.ev === 'thumb') {
             if (typeof m.rgba !== 'string' || !this._known(m.id)) return;

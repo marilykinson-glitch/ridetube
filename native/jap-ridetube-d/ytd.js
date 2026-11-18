@@ -290,7 +290,7 @@ const CRED_RE = /clientId:"([-\w]+\.apps\.googleusercontent\.com)",\n?[$\w]+:"([
 const SCOPE = 'http://gdata.youtube.com https://www.googleapis.com/auth/youtube-paid-content';
 const TOKEN_URL = YT + '/o/oauth2/token';
 const FEEDS = { home: 'FEwhat_to_watch', subs: 'FEsubscriptions', wl: 'VLWL', hist: 'FEhistory', liked: 'VLLL' };
-const FEED_MAX = 50;
+const FEED_MAX = 50, LIST_MAX = 100;   // LIST_MAX: a playlist's page (the app keeps up to 100)
 
 // method, url, headers, body (JSON or null) -> {status, body (utf8)}; no redirects (none seen on these URLs)
 function ytRequest(method, url, headers, body, timeoutMs, lookup) {
@@ -653,7 +653,7 @@ Account.prototype.loadFeed = async function (which) {
 Account.prototype.channels = function () { return this.browseEv({ ev: 'channels' }, 'FEchannels', (j) => ({ items: channelTiles(j) }), 600000); };
 Account.prototype.playlists = function () { return this.browseEv({ ev: 'playlists' }, 'FEplaylist_aggregation', (j) => ({ items: playlistTiles(j) }), 300000); };
 Account.prototype.channel = function (id) {
-    if (LIST_RE.test(String(id))) return this.browseEv({ ev: 'channel', id: id }, id, (j) => ({ items: feedItems(j).slice(0, FEED_MAX), shelves: [] }), 0);   // a playlist's page, shown as a channel's
+    if (LIST_RE.test(String(id))) return this.browseEv({ ev: 'channel', id: id }, id, (j) => ({ items: feedItems(j).slice(0, LIST_MAX), shelves: [] }), 0);   // a playlist's page, shown as a channel's
     if (!CHAN_RE.test(String(id))) { this.emit({ ev: 'channel', id: String(id), error: 'bad channel' }); return Promise.resolve(); }
     return this.browseEv({ ev: 'channel', id: id }, id, (j) => ({ items: feedItems(j).slice(0, FEED_MAX), shelves: feedShelves(j) }), 0);
 };

@@ -1,5 +1,10 @@
 # Changelog
 
+## App 0.3.22, service 0.3.14
+
+- Playlists, History, Liked videos and search results show up to 100 videos (they were cut at 20, search at 10).
+- Autoplay goes on through the whole list: it used to stop at the end of the four-wide row the video was picked from.
+
 ## App 0.3.21, service 0.3.13
 
 - YouTube is asked in Vietnamese (`hl=vi`, `gl=VN`): view counts, ages, shelf names and the Home feed come as

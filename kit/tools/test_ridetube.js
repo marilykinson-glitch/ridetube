@@ -174,7 +174,7 @@ async function clientAndModel() {
     const many = Array.from({ length: 25 }, (_, i) => ({ id: 'sub' + i, title: 'Sub ' + i, channel: 'C', duration_s: 60, meta: ['1K views', '2 days ago'] }));
     d.send({ ev: 'feed', which: 'subs', items: many.concat([{ bad: 1 }]) });
     await until(() => m.feeds.subs.items.length, 2000, 'feed');
-    assert.ok(m.feeds.subs.items.length === 20 && !m.feeds.subs.loading && m.feeds.subs.error === null, 'at most 20');
+    assert.ok(m.feeds.subs.items.length === 25 && !m.feeds.subs.loading && m.feeds.subs.error === null, 'all 25 kept (the cap is 100)');
     assert.strictEqual(m.feeds.subs.shelves, null, 'no shelves (an older daemon): none');
     assert.deepStrictEqual(m.feeds.subs.items[0].meta, ['1K views', '2 days ago'], 'meta kept');
     await sleep(30);
@@ -217,6 +217,11 @@ async function clientAndModel() {
     d.send({ ev: 'playlists', items: [{ id: 'VLPLabc', title: 'Nhạc', sub: '3 video' }, { id: 'UCbad', title: 'x' }, null] });
     await until(() => !m.lists.loading, 2000, 'playlists');
     assert.deepStrictEqual(m.lists.items, [{ id: 'VLPLabc', title: 'Nhạc', sub: '3 video' }]);
+    const longList = Array.from({ length: 60 }, (_, i) => ({ id: 'vid' + String(i).padStart(8, '0'), title: 'V' + i, channel: 'C' }));
+    m.feed('liked'); d.send({ ev: 'feed', which: 'liked', items: longList, shelves: [] });
+    await until(() => m.feeds.liked && !m.feeds.liked.loading, 2000, 'liked feed');
+    assert.strictEqual(m.feeds.liked.items.length, 60, 'a long playlist is not cut at 20');
+    m.feeds.liked.loading = false;
     assert.ok(m.feed('hist') && m.feed('liked'));
     await until(() => d.cmds('feed').slice(-2).map((x) => x.which).join() === 'hist,liked', 2000, 'hist, liked cmds');
     assert.strictEqual(m.error, null, 'a feed error is not a playback error');

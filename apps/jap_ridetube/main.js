@@ -629,7 +629,7 @@ mgu.run({
                 if (sc.grid) for (let i = 0; i < sc.items.length; i += PER_ROW) chunks.push(sc.items.slice(i, i + PER_ROW));
                 chunks.forEach((items, k) => {
                     const title = k === 0 ? sc.title : null, h = (title ? HEAD_H : 0) + TILE_H + (sc.grid && k < chunks.length - 1 ? GRID_GAP : SHELF_GAP);
-                    rows.push({ title, sub: k === 0 ? sc.sub : null, items, y, h, hs: !sc.grid && items.length > PER_ROW, chan: !!sc.chan });
+                    rows.push({ title, sub: k === 0 ? sc.sub : null, items, all: sc.items, y, h, hs: !sc.grid && items.length > PER_ROW, chan: !!sc.chan });
                     y += h;
                 });
             });
@@ -664,7 +664,7 @@ mgu.run({
                 for (let i = Math.max(0, off - 1); i <= Math.min(n - 1, off + PER_ROW); i++) {
                     const r = row.items[i], x = X0 + (i - off) * PITCH, key = letter + ':' + ri + ':' + r.id;
                     if (shown && x + TW > RAIL_W && x < W) (row.chan || r.act ? drawChan : drawTile)(cv, r, x, ty, key);
-                    const run = r.act ? () => r.act() : row.chan ? () => openChannel(r) : () => play(r.id, r, row.items);
+                    const run = r.act ? () => r.act() : row.chan ? () => openChannel(r) : () => play(r.id, r, row.all);   // (a grid's rows are four wide: autoplay goes on through the whole list)
                     if (cv.own) { cv.target(x - 10, ty - 10, TW + 20, TILE_H + 16, run, key, 18); where[key] = { ri, i }; }
                 }
             });
