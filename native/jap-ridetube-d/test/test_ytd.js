@@ -35,6 +35,7 @@ const someip = {
         getValue: async (n) => { assert.strictEqual(n, 'listOfMainConnections'); return conns.slice(); },
         callMethod: async (m, a) => {
             calls.push({ inst: inst, m: m, a: a });
+            if (callDelay) await sleep(callDelay);
             if (m === 'connect' && refusedConnections > 0) {
                 refusedConnections--;
                 return { amError: 'E_NOT_POSSIBLE' };
@@ -46,6 +47,7 @@ const someip = {
         }
     })
 };
+let callDelay = 0;   // every BMW call answers this late (ms)
 const called = (m) => calls.filter((c) => c.m === m);
 const ours = () => conns.filter((c) => c.sourceID === 1046);
 
@@ -567,7 +569,7 @@ async function main() {
     };
     const hdir = (id) => path.join(cache, id);
     const ytdecIns = () => ytdecLines().map((l) => l.split(' ').slice(1).join(' ')).filter((l) => /^in (pause|resume|seek)/.test(l));
-    const stopIdle = async () => { c.send({ cmd: 'stop' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'idle'); };
+    const stopIdle = async () => { c.send({ cmd: 'stop' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'idle'); c.clear(); };
 
     await t('head: plays audio.head.m4a on audio_head + 10 s video; audio_ready -> playFile(audio.m4a) on the same connection + setTime; head removed', async () => {
         const id = 'FFFFFFFFFH1';
@@ -735,6 +737,26 @@ async function main() {
         await stopIdle();
     });
 
+    for (const off of [0, 90, 170, 260, 350]) await t('a fatal error ' + off + ' ms into an underrun recovery (BMW answers in 80 ms): the recovery does not open the audio again', async () => {
+        fs.writeFileSync(ctl, ''); setMode('ok');
+        await fetchPlay('FFFFFFFFU' + String(10 + off / 10 | 0).padStart(2, '0'));
+        tick(5000); await sleep(50);
+        calls.length = 0; c.clear();
+        callDelay = 80;
+        subs.playbackErrorEvent({ event: 'ITEM_BUFFER_UNDERRUN' });
+        await sleep(off);
+        subs.playbackErrorEvent({ event: 'FATAL' });
+        await c.waitFor((x) => x.ev === 'error');
+        await sleep(4500);
+        callDelay = 0;
+        assert.strictEqual(d.state, 'error');
+        const n = called('connect').length;
+        await sleep(300);
+        assert.strictEqual(called('connect').length, n, 'no connection opened after the error');
+        assert.strictEqual(ours().length, 0, 'no audio connection of ours left');
+        await stopIdle();
+    });
+
     await t('ITEM_BUFFER_UNDERRUN on the full file: the player is started again there (3 a minute); other errors stay errors', async () => {
         fs.writeFileSync(ctl, ''); setMode('ok');
         const id = 'FFFFFFFFFU2';
@@ -790,6 +812,7 @@ async function main() {
         await c.waitFor((x) => x.ev === 'state' && x.state === 'error', 4000);
         await c.waitFor((x) => x.ev === 'error' && x.msg === 'fetch: HTTP 403');
         assert.strictEqual(ours().length, 0);
+        await sleep(400); fs.writeFileSync(ctl, ''); await stopIdle();   // (the fetcher's own exit may report a second error)
     });
 
     // ---- account and feeds
@@ -811,7 +834,7 @@ async function main() {
         c.send({ cmd: 'fill', on: true });
         await sleep(300);
         assert.strictEqual(ytdecLines().filter((l) => / argv /.test(l)).length, 2);
-        assert.ok(!c.evs.some((x) => x.ev === 'error'));
+        assert.ok(!c.evs.some((x) => x.ev === 'error'), JSON.stringify(c.evs.filter((x) => x.ev === 'error')));
         c.send({ cmd: 'stop' });
         await c.waitFor((x) => x.ev === 'state' && x.state === 'idle');
     });

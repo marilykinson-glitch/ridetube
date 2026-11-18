@@ -2,7 +2,7 @@
   "id": "jap_ridetube",
   "title": "YouTube TV",
   "description": "Ứng dụng YouTube không chính thức cho BMW iDrive 7. Giao diện tiếng Việt với font Noto Sans, tìm kiếm, kênh đăng ký, Xem sau và SponsorBlock.",
-  "version": "0.3.31",
+  "version": "0.3.32",
   "license": "GPL-3.0-or-later",
   "vendor": "custom",
   "loggingId": "OAA6",

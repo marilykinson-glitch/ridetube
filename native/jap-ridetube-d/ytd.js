@@ -1253,6 +1253,8 @@ Daemon.prototype.play = async function (id, rect, fill, at, quality, skip, resto
     this.pct = 0;
     this.fetchedMs = Infinity;
     this.head = null;
+    this.underruns = [];
+    this.recovering = false;
     this.headWait = false;
     this.switching = false;
     this.settle = null;
@@ -1450,7 +1452,7 @@ Daemon.prototype.stopFetch = function () {
 };
 Daemon.prototype.failPlayback = async function (msg) {
     this.log('error: ' + msg);
-    const g = this.gen;
+    const g = ++this.gen;   // (what a pause/resume or recovery under way checks: it must not start the audio again)
     this.ticking = false;
     this.killYtdec();
     await Promise.all([this.audio.release(), this.stopFetch()]);
@@ -1526,6 +1528,7 @@ Daemon.prototype.resume = async function () {
             if (gen === this.gen) await this.failPlayback('resume: ' + e.message);
             return;
         }
+        if (gen !== this.gen && (this.state === 'error' || this.state === 'idle')) await this.audio.release().catch(() => undefined);   // (it started after the teardown released)
         if (gen !== this.gen || this.state !== 'playing') return; // stopped, or paused again meanwhile
         // a setTime before the new file's first tick is dropped (it started at 0 on the car): wait for one (3 s at most)
         await new Promise((r) => { this.tickWaiter = r; setTimeout(r, 3000); });

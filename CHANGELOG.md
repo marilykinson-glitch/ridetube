@@ -1,5 +1,10 @@
 # Changelog
 
+## App 0.3.32, service 0.3.24
+
+- A fatal playback error while an underrun recovery is under way now cancels the recovery: it no longer opens the audio again after the app has gone to the error screen (the sound kept playing behind the error).
+- The underrun count (3 a minute) starts again with each video.
+
 ## App 0.3.31, service 0.3.23
 
 - A burst of `ITEM_BUFFER_UNDERRUN` events no longer breaks the recovery: those arriving while the player is being started again are ignored (one stall, one restart).
