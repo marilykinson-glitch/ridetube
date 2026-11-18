@@ -1450,9 +1450,11 @@ Daemon.prototype.stopFetch = function () {
 };
 Daemon.prototype.failPlayback = async function (msg) {
     this.log('error: ' + msg);
+    const g = this.gen;
     this.ticking = false;
     this.killYtdec();
     await Promise.all([this.audio.release(), this.stopFetch()]);
+    if (g !== this.gen) return;   // a new video (or a Stop) came in while this one tore down: the error is the old video's
     this.setState('error');
     this.emit({ ev: 'error', msg: msg });
 };
@@ -1661,6 +1663,10 @@ Daemon.prototype.onPlaybackError = function (v) {
         this.log('audio: underrun during the head -> full switch, ignored');
         return;
     }
+    if (underrun && this.recovering) {   // a burst: the ones that come while the player is being started again are the same stall
+        this.log('audio: underrun while recovering, ignored');
+        return;
+    }
     if (underrun && !this.switching && !this.headWait) {
         const now = Date.now();
         this.underruns = (this.underruns || []).filter((t) => now - t < 60000);
@@ -1668,7 +1674,10 @@ Daemon.prototype.onPlaybackError = function (v) {
             this.underruns.push(now);
             this.log('audio: underrun at ' + this.elapsed + ', starting the player again there');
             if (this.state !== 'playing') return;   // paused: the player is stopped, nothing to start again
-            (async () => { await this.pause(); await this.resume(); })().catch((e) => this.log('underrun recovery: ' + e));
+            this.recovering = true;
+            (async () => { await this.pause(); await this.resume(); })()
+                .catch((e) => this.log('underrun recovery: ' + e))
+                .then(() => { this.recovering = false; });
             return;
         }
     }

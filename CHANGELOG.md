@@ -1,5 +1,10 @@
 # Changelog
 
+## App 0.3.31, service 0.3.23
+
+- A burst of `ITEM_BUFFER_UNDERRUN` events no longer breaks the recovery: those arriving while the player is being started again are ignored (one stall, one restart).
+- An error of the old video tearing down (about 600 ms) can no longer turn a video opened in the meantime into the error screen.
+
 ## App 0.3.30, service 0.3.22
 
 - `ITEM_BUFFER_UNDERRUN` arriving while the audio switches from the temporary head file to the full file (or waits for it) is ignored instead of ending in the error screen with the audio connection closed.

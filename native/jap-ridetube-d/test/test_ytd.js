@@ -717,6 +717,24 @@ async function main() {
         await stopIdle();
     });
 
+    await t('a burst of ITEM_BUFFER_UNDERRUN (4 at once): one recovery, no error; an error of the old video does not touch a new one', async () => {
+        fs.writeFileSync(ctl, ''); setMode('ok');
+        await fetchPlay('FFFFFFFFFU4');
+        tick(5000); await sleep(50);
+        calls.length = 0; c.clear();
+        for (let k = 0; k < 4; k++) subs.playbackErrorEvent({ event: 'ITEM_BUFFER_UNDERRUN' });
+        await waitUntil(() => called('playFile').length === 1, 4000);
+        await sleep(300);
+        assert.ok(!c.evs.some((x) => x.ev === 'error' || x.state === 'error'), 'the burst recovered, no error');
+        assert.strictEqual(called('playFile').length, 1, 'one restart');
+        // an error tearing down while another video starts: the new one keeps its state
+        subs.playbackErrorEvent({ event: 'OTHER' });
+        await fetchPlay('FFFFFFFFFU5');
+        await sleep(400);
+        assert.ok(d.state !== 'error', 'the new video is not turned into the old one\'s error: ' + d.state);
+        await stopIdle();
+    });
+
     await t('ITEM_BUFFER_UNDERRUN on the full file: the player is started again there (3 a minute); other errors stay errors', async () => {
         fs.writeFileSync(ctl, ''); setMode('ok');
         const id = 'FFFFFFFFFU2';
