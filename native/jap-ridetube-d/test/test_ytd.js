@@ -829,6 +829,7 @@ async function main() {
         }
         const big = { a: Array.from({ length: 130 }, (_, i) => tile('LONG' + String(i).padStart(7, '0'), 'TILE_CONTENT_TYPE_VIDEO', 'L' + i, 'Chan', '1:00')) };
         const keep = yt.browse; yt.browse = () => ok(big);
+        c.clear();
         c.send({ cmd: 'feed', which: 'liked' });
         const lk = await c.waitFor((x) => x.ev === 'feed' && x.which === 'liked' && x.items);
         assert.strictEqual(lk.items.length, 100, 'a long list: up to 100, not 50');
