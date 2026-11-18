@@ -79,7 +79,8 @@ function qualityHeight(q, lease) {
 }
 // members-only (or members-first) videos: a badge somewhere in the tile, its shape unknown (no capture) - matched on the text
 // shortcut: a JSON scan of the tile, swap for the badge's field once a real members tile is captured
-const isMembers = (t) => /BADGE_STYLE_TYPE_MEMBERS|"Members (only|first)"/i.test(JSON.stringify(t));
+// (hl=vi: the badge's text comes in Vietnamese; the style constant is language-free and stays the main signal)
+const isMembers = (t) => /BADGE_STYLE_TYPE_MEMBERS|"Members (only|first)"|"(Chỉ dành cho|Dành cho|Dành riêng cho) hội viên"/i.test(JSON.stringify(t));
 const PERMANENT_RE = /unavailable|private|removed|terminated|copyright|members|\bage\b|not available in your country/i;
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 function withTimeout(p, ms, what) {
@@ -284,11 +285,11 @@ function fetchRequest(o, uid, req) {
 // Tokens live in accountFile (0600, written atomically) and never cross the ctl socket or the log.
 const YT = 'https://www.youtube.com';
 const TV_UA = 'Mozilla/5.0 (Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/2.4.0 TV Safari/538.1';
-const TV_CLIENT = { clientName: 'TVHTML5', clientVersion: '7.20251101.10.00', hl: 'en' };
+const TV_CLIENT = { clientName: 'TVHTML5', clientVersion: '7.20251101.10.00', hl: 'vi', gl: 'VN' };
 const CRED_RE = /clientId:"([-\w]+\.apps\.googleusercontent\.com)",\n?[$\w]+:"([-\w]+)"/;
 const SCOPE = 'http://gdata.youtube.com https://www.googleapis.com/auth/youtube-paid-content';
 const TOKEN_URL = YT + '/o/oauth2/token';
-const FEEDS = { home: 'FEwhat_to_watch', subs: 'FEsubscriptions', wl: 'VLWL' };
+const FEEDS = { home: 'FEwhat_to_watch', subs: 'FEsubscriptions', wl: 'VLWL', hist: 'FEhistory', liked: 'VLLL' };
 const FEED_MAX = 50;
 
 // method, url, headers, body (JSON or null) -> {status, body (utf8)}; no redirects (none seen on these URLs)
@@ -326,11 +327,13 @@ const runsText = (x) => (!x ? '' : typeof x.simpleText === 'string' ? x.simpleTe
     : Array.isArray(x.runs) ? x.runs.map((r) => (r && r.text) || '').join('') : '');
 function hms(s) { return /^\d+(:\d{1,2}){1,2}$/.test(s) ? s.split(':').reduce((a, p) => a * 60 + Number(p), 0) : null; }
 // One TVHTML5 tileRenderer -> {id,title,channel,duration_s,meta}, or null when it is not a video
-// (shorts, channels, playlists). meta: the texts of the second line, without its "•" and badges ("4K").
+// (channels, playlists). A short (reelWatchEndpoint) is a video tile with short:true. meta: the texts of the second line, without its "•" and badges ("4K").
 function tileItem(t) {
-    const ep = t.onSelectCommand && t.onSelectCommand.watchEndpoint;
+    const sel = t.onSelectCommand || {};
+    const short = t.contentType === 'TILE_CONTENT_TYPE_SHORTS';
+    const ep = short ? sel.reelWatchEndpoint : sel.watchEndpoint;
     const id = t.contentId || (ep && ep.videoId);
-    if (t.contentType !== 'TILE_CONTENT_TYPE_VIDEO' || !ID_RE.test(String(id))) return null;
+    if ((t.contentType !== 'TILE_CONTENT_TYPE_VIDEO' && !short) || !ID_RE.test(String(id))) return null;
     const m = (t.metadata && t.metadata.tileMetadataRenderer) || {};
     const lines = (Array.isArray(m.lines) ? m.lines : []).map((l) => ((l && l.lineRenderer && l.lineRenderer.items) || [])
         .map((i) => runsText(i && i.lineItemRenderer && i.lineItemRenderer.text)));
@@ -339,8 +342,9 @@ function tileItem(t) {
     const rp = ovs.map((x) => x && x.thumbnailOverlayResumePlaybackRenderer).filter(Boolean)[0];   // the account's own progress
     const it = { id: id, title: runsText(m.title) || id, channel: (lines[0] || []).join(''), duration_s: hms(runsText(ov && ov.text)),
         meta: (lines[1] || []).filter((x) => x && x.trim() !== '\u2022') };
+    if (short) it.short = true;
     if (rp && rp.percentDurationWatched > 0) it.watched_pct = Math.min(100, Number(rp.percentDurationWatched) || 0);
-    if (ep && ep.startTimeSeconds > 0) it.start_s = Number(ep.startTimeSeconds);
+    if (!short && ep && ep.startTimeSeconds > 0) it.start_s = Number(ep.startTimeSeconds);
     if (isMembers(t)) it.members = true;
     return it;
 }
@@ -400,6 +404,32 @@ function feedShelves(root) {
         Object.keys(o).forEach((k) => walk(o[k]));
     })(root);
     return out.slice(0, SHELF_MAX);
+}
+
+// FEplaylist_aggregation (the TV app's library: the account's playlists) -> [{id, title, sub}], each playlist once.
+// id: the browse id of the playlist ("VL" + its list id), what `channel`-style paging opens.
+const LIST_RE = /^VL(PL|LL|WL|FL|OL|RD)[\w-]*$/;
+function playlistTiles(root) {
+    const out = [], seen = {};
+    (function walk(o) {
+        if (!o || typeof o !== 'object') return;
+        const t = o.tileRenderer;
+        if (t && typeof t === 'object') {
+            if (t.contentType !== 'TILE_CONTENT_TYPE_PLAYLIST') return;
+            const ep = t.onSelectCommand && t.onSelectCommand.browseEndpoint;
+            let id = (ep && ep.browseId) || t.contentId;
+            if (typeof id === 'string' && /^(PL|LL|FL|OL|RD)[\w-]+$/.test(id)) id = 'VL' + id;
+            if (!LIST_RE.test(String(id)) || id === 'VLWL' || id === 'VLLL' || seen[id]) return;   // Watch later and Liked have their own tabs
+            const m = (t.metadata && t.metadata.tileMetadataRenderer) || {};
+            const lines = (Array.isArray(m.lines) ? m.lines : []).map((l) => ((l && l.lineRenderer && l.lineRenderer.items) || [])
+                .map((i) => runsText(i && i.lineItemRenderer && i.lineItemRenderer.text)).join(' · ')).filter(Boolean);
+            seen[id] = true;
+            out.push({ id: id, title: runsText(m.title) || id, sub: lines.join(' · ') });
+            return;
+        }
+        Object.keys(o).forEach((k) => walk(o[k]));
+    })(root);
+    return out;
 }
 
 // FEchannels (the TV app's "Channels" page: every subscription, A-Z) -> [{id, title, handle}], each channel once
@@ -621,7 +651,9 @@ Account.prototype.loadFeed = async function (which) {
 // `channels` -> channels{items:[{id,title,handle}]} or channels{error}; the list is kept 10 min
 // `channel` {id} -> channel{id, items, shelves} (its page: Videos, Popular...) or channel{id, error}
 Account.prototype.channels = function () { return this.browseEv({ ev: 'channels' }, 'FEchannels', (j) => ({ items: channelTiles(j) }), 600000); };
+Account.prototype.playlists = function () { return this.browseEv({ ev: 'playlists' }, 'FEplaylist_aggregation', (j) => ({ items: playlistTiles(j) }), 300000); };
 Account.prototype.channel = function (id) {
+    if (LIST_RE.test(String(id))) return this.browseEv({ ev: 'channel', id: id }, id, (j) => ({ items: feedItems(j).slice(0, FEED_MAX), shelves: [] }), 0);   // a playlist's page, shown as a channel's
     if (!CHAN_RE.test(String(id))) { this.emit({ ev: 'channel', id: String(id), error: 'bad channel' }); return Promise.resolve(); }
     return this.browseEv({ ev: 'channel', id: id }, id, (j) => ({ items: feedItems(j).slice(0, FEED_MAX), shelves: feedShelves(j) }), 0);
 };
@@ -1076,6 +1108,7 @@ Daemon.prototype.onLine = function (line) {
     case 'sign_out': return this.account.signOut();
     case 'feed': return this.account.feed(m.which);
     case 'channels': return this.account.channels();
+    case 'playlists': return this.account.playlists();
     case 'channel': return this.account.channel(m.id);
     default: return this.emit({ ev: 'error', msg: 'unknown cmd ' + m.cmd });
     }
@@ -1646,7 +1679,7 @@ Daemon.prototype.close = async function () {
     if (this.server) this.server.close();
 };
 
-module.exports = { qualityHeight: qualityHeight, channelTiles: channelTiles, Daemon: Daemon, Audio: Audio, Account: Account, feedItems: feedItems, isPlayable: isPlayable, feedShelves: feedShelves, ytRequest: ytRequest, uplinkLookup: uplinkLookup, pickFetchUid: pickFetchUid, fetchRequest: fetchRequest, listCache: listCache, pruneCache: pruneCache, isReady: isReady };
+module.exports = { qualityHeight: qualityHeight, channelTiles: channelTiles, playlistTiles: playlistTiles, Daemon: Daemon, Audio: Audio, Account: Account, feedItems: feedItems, isPlayable: isPlayable, feedShelves: feedShelves, ytRequest: ytRequest, uplinkLookup: uplinkLookup, pickFetchUid: pickFetchUid, fetchRequest: fetchRequest, listCache: listCache, pruneCache: pruneCache, isReady: isReady };
 
 // the uplink's DNS servers (its lease): the system resolver (127.0.0.1) answers no internet names. No
 // lease (uplink down or not installed): the system resolver, as before

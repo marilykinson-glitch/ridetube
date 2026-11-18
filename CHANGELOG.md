@@ -1,5 +1,13 @@
 # Changelog
 
+## App 0.3.21, service 0.3.13
+
+- YouTube is asked in Vietnamese (`hl=vi`, `gl=VN`): view counts, ages, shelf names and the Home feed come as
+  YouTube's own Vietnamese. The English-to-Vietnamese fallback in `vi.js` stays for older answers.
+- Library page (rail): History, Liked videos and the account's playlists; a playlist opens like a channel page.
+- Shorts show as normal video tiles (`short: true`) instead of being dropped.
+- Members-only detection also reads the Vietnamese badge text.
+
 ## Service 0.3.9
 
 - Videos play again: each video's folder was 0700, so BMW's media engine (its own uid) could not open the audio

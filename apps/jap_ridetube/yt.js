@@ -4,7 +4,7 @@
  *
  *   Ctl    the control socket /run/jap-ridetube-d/ctl.sock: JSON lines, reconnects every 2 s.
  *          App -> daemon: search{q} thumb{id} play{id,rect:"WxH",fill} pause resume seek{ms} stop quality{quality} fill{on} video{on} status
- *                         auth_status auth sign_out feed{which:home|subs|wl} channels channel{id}
+ *                         auth_status auth sign_out feed{which:home|subs|wl|hist|liked} channels playlists channel{id: a channel or a playlist's VL id}
  *          Daemon -> app: (a played video is deleted from the car once stopped; nothing is kept for offline)
  *                         results{q,items:[{id,title,channel,duration_s,meta?}]} thumb{id,w,h,rgba(base64)}: 160x90 or 320x180
  *                         state{state:idle|preparing|playing|paused|ended|error,pct,id,title} time{elapsed,total} error{msg}
@@ -22,7 +22,7 @@ const net = require('net');
 
 const SOCKET = '/run/jap-ridetube-d/ctl.sock';
 const MAX_LINE = 1 << 20;            // a 320x180 thumb is 307 kB of base64; anything far past that is not ours
-const FEEDS = ['home', 'subs', 'wl'];
+const FEEDS = ['home', 'subs', 'wl', 'hist', 'liked'];
 const FEED_MAX = 20;                 // a feed's flat list (its pictures: as many as drawn, main.js's pool)
 const SHELVES = 8, SHELF_MAX = 12;   // a feed's shelves, the videos in each
 const SIZES = ['160x90', '320x180']; // the thumb sizes the daemon sends
@@ -100,13 +100,14 @@ class Model {
         this.wantVideo = false;      // player shown and parked
         // the account: unknown (not asked yet) | asking | signed_out | code | signed_in | error | unsupported (older daemon)
         this.auth = { state: 'unknown', code: null, url: null, msg: null };
-        this.feeds = {};             // home|subs|wl -> {items, loading, error, t}
+        this.feeds = {};             // home|subs|wl|hist|liked -> {items, loading, error, t}
         this.pos = {};               // id -> {ms, total, done, title, channel, duration_s}: where each video was left
         this.resume = [];            // Continue watching: started, not finished, newest first
         this.extras = null;          // the playing video's {id, chapters: [[ms, title]], segments: [[ms, ms, category]]}
         this.toast = null;           // {text, until}: a skipped sponsor
         this.chans = null;           // the subscribed channels: {items:[{id,title,handle}], loading, error, t}
-        this.chan = null;            // the channel page shown: {id, title, items, shelves, loading, error, t}
+        this.lists = null;           // the account's playlists: {items:[{id: VL..., title, sub}], loading, error, t}
+        this.chan = null;            // the channel (or playlist) page shown: {id, title, items, shelves, loading, error, t}
         this.rev = 0;                // bumped on every change the screens show
     }
     active() { return ACTIVE.indexOf(this.state) >= 0; }
@@ -150,7 +151,7 @@ class Model {
             if (this.state === 'playing' && was !== 'playing' && was !== 'paused') { this.videoOn = null; this._video(); }
         } else if (m.ev === 'auth') {
             this.auth = { state: String(m.state || 'signed_out'), code: m.code ? String(m.code) : null, url: typeof m.url === 'string' ? m.url : null, msg: m.msg ? String(m.msg) : null };
-            if (this.auth.state !== 'signed_in') { this.feeds = {}; this.chans = null; this.chan = null; this._prune(); }   // signed out: nobody's feed left on screen
+            if (this.auth.state !== 'signed_in') { this.feeds = {}; this.chans = null; this.lists = null; this.chan = null; this._prune(); }   // signed out: nobody's feed left on screen
         } else if (m.ev === 'channels') {
             if (!this.chans) return;
             this.chans.loading = false;
@@ -158,6 +159,14 @@ class Model {
                 this.chans.error = null;
                 this.chans.items = (Array.isArray(m.items) ? m.items : []).filter((c) => c && /^UC[\w-]{22}$/.test(c.id))
                     .map((c) => ({ id: c.id, title: String(c.title || c.id), handle: String(c.handle || ''), key: fold(c.title) }));
+            }
+        } else if (m.ev === 'playlists') {
+            if (!this.lists) return;
+            this.lists.loading = false;
+            if (m.error) this.lists.error = String(m.error); else {
+                this.lists.error = null;
+                this.lists.items = (Array.isArray(m.items) ? m.items : []).filter((c) => c && /^VL[\w-]+$/.test(c.id))
+                    .map((c) => ({ id: c.id, title: String(c.title || c.id), sub: String(c.sub || '') }));
             }
         } else if (m.ev === 'channel') {
             const c = this.chan;
@@ -300,7 +309,7 @@ class Model {
     /** a feed with no answer after ms: an error, as for searches */
     checkFeeds(now, ms) {
         let any = false;
-        FEEDS.map((w) => this.feeds[w]).concat([this.chans, this.chan])
+        FEEDS.map((w) => this.feeds[w]).concat([this.chans, this.lists, this.chan])
             .forEach((f) => { if (f && f.loading && now - f.t >= ms) { f.loading = false; f.error = 'Dịch vụ phát video không phản hồi'; any = true; } });
         if (any) this._changed();
         return any;
@@ -317,6 +326,16 @@ class Model {
         c.loading = true; c.error = null; c.t = Date.now();
         this._changed();
         if (this.send({ cmd: 'channels' })) return true;
+        c.loading = false; c.error = 'Dịch vụ phát video chưa chạy (jap-ridetube-d)';
+        return false;
+    }
+    /** (re)load the account's playlists (the daemon keeps them 5 min); shown meanwhile */
+    loadPlaylists() {
+        const c = this.lists = this.lists || { items: [] };
+        if (c.loading || this.auth.state !== 'signed_in') return false;
+        c.loading = true; c.error = null; c.t = Date.now();
+        this._changed();
+        if (this.send({ cmd: 'playlists' })) return true;
         c.loading = false; c.error = 'Dịch vụ phát video chưa chạy (jap-ridetube-d)';
         return false;
     }

@@ -180,7 +180,7 @@ async function main() {
         const r = ytCalls('/youtubei/v1/search')[0];
         assert.strictEqual(r.method, 'POST');
         assert.strictEqual(r.headers, null, 'anonymous');
-        assert.deepStrictEqual(r.body, { context: { client: { clientName: 'TVHTML5', clientVersion: '7.20251101.10.00', hl: 'en' } }, query: 'bunny' });
+        assert.deepStrictEqual(r.body, { context: { client: { clientName: 'TVHTML5', clientVersion: '7.20251101.10.00', hl: 'vi', gl: 'VN' } }, query: 'bunny' });
         yt.search = () => Promise.reject(new Error('ENETUNREACH'));
         c.send({ cmd: 'search', q: 'x' });
         await c.waitFor((x) => x.ev === 'error' && x.msg === 'search offline');
@@ -811,8 +811,9 @@ async function main() {
         const v1 = { id: 'VVVVVVVVVV1', title: 'First', channel: 'Chan A', duration_s: 2390, meta: ['1K views'] };
         const v2 = { id: 'VVVVVVVVVV2', title: 'Second', channel: 'Chan C', duration_s: 3723, meta: ['1K views'] };
         const v3 = { id: 'VVVVVVVVVV3', title: 'Live', channel: 'Chan D', duration_s: null, meta: ['1K views'] };
-        assert.deepStrictEqual(e, { ev: 'feed', which: 'subs', items: [v1, v2, v3],
-            shelves: [{ title: 'Chan A', items: [v1] }, { title: '', items: [v2, v1, v3] }] });
+        const sv = { id: 'SSSSSSSSSS1', title: 'A short', channel: 'Chan B', duration_s: null, meta: ['1K views'], short: true };   // a short is a video tile
+        assert.deepStrictEqual(e, { ev: 'feed', which: 'subs', items: [v1, sv, v2, v3],
+            shelves: [{ title: '', items: [v1, sv] }, { title: '', items: [v2, v1, v3] }] });
         const b = ytCalls('/browse')[0];
         assert.strictEqual(b.headers.Authorization, 'Bearer ACCESS-1');
         assert.strictEqual(b.body.browseId, 'FEsubscriptions');
@@ -821,6 +822,11 @@ async function main() {
         c.send({ cmd: 'feed', which: 'wl' });
         await c.waitFor((x) => x.ev === 'feed' && x.which === 'wl');
         assert.strictEqual(ytCalls('/browse')[1].body.browseId, 'VLWL');
+        for (const [w, id] of [['hist', 'FEhistory'], ['liked', 'VLLL']]) {
+            c.send({ cmd: 'feed', which: w });
+            await c.waitFor((x) => x.ev === 'feed' && x.which === w);
+            assert.strictEqual(ytCalls('/browse').pop().body.browseId, id);
+        }
         c.send({ cmd: 'feed', which: 'nope' });
         await c.waitFor((x) => x.ev === 'feed' && x.which === 'nope' && x.error === 'unknown feed');
         c.send({ cmd: 'search', q: 'bunny' });
@@ -836,7 +842,7 @@ async function main() {
         yt.browse = (h) => (h.Authorization === 'Bearer ACCESS-2' ? { status: 401, body: '{}' } : ok(BROWSE));
         c.send({ cmd: 'feed', which: 'home' });
         const e = await c.waitFor((x) => x.ev === 'feed');
-        assert.strictEqual(e.items.length, 3, JSON.stringify(e));
+        assert.strictEqual(e.items.length, 4, JSON.stringify(e));
         assert.deepStrictEqual(ytCalls('/browse').map((x) => x.headers.Authorization), ['Bearer ACCESS-2', 'Bearer ACCESS-3']);
         assert.strictEqual(ytCalls('/browse')[0].body.browseId, 'FEwhat_to_watch');
         const a2 = readAcct();
@@ -1083,7 +1089,16 @@ async function main() {
         assert.strictEqual(qualityHeight(undefined, null), 720, 'no uplink known: as before');
     });
 
-    await t('feedShelves: titles, per-channel and mixed groups, shorts shelf dropped, per-shelf dedup, meta, caps', async () => {
+    await t('playlistTiles: the library\'s playlists (VL ids), Watch later and Liked left to their tabs, each once', async () => {
+        const { playlistTiles } = require('../ytd.js');
+        const pl = (id, title, line) => ({ tileRenderer: { contentType: 'TILE_CONTENT_TYPE_PLAYLIST', contentId: id, onSelectCommand: { browseEndpoint: { browseId: 'VL' + id } },
+            metadata: { tileMetadataRenderer: { title: { simpleText: title }, lines: line ? [{ lineRenderer: { items: [{ lineItemRenderer: { text: { simpleText: line } } }] } }] : [] } } } });
+        assert.deepStrictEqual(playlistTiles({ a: [pl('PLabc123-_x', 'Nhạc', '12 video'), pl('PLabc123-_x', 'Nhạc', '12 video'), pl('WL', 'Xem sau'), pl('LL', 'Đã thích'),
+            tile('VVVVVVVVVV1', 'TILE_CONTENT_TYPE_VIDEO', 'V', 'C', '1:00'), pl('bad id', 'x')] }), [{ id: 'VLPLabc123-_x', title: 'Nhạc', sub: '12 video' }]);
+        assert.deepStrictEqual(playlistTiles({}), []);
+    });
+
+    await t('feedShelves: titles, per-channel and mixed groups, shorts shelf kept, per-shelf dedup, meta, caps', async () => {
         const V = 'TILE_CONTENT_TYPE_VIDEO';
         const txt = (x) => ({ lineItemRenderer: { text: { simpleText: x } } });
         const badge = (x) => ({ lineItemRenderer: { badge: { metadataBadgeRenderer: { style: 'BADGE_STYLE_TYPE_SIMPLE', label: x } } } });
@@ -1103,16 +1118,17 @@ async function main() {
             shelf({ tvhtml5Metadata: { retainShelfIndex: true } }, [tile(id(1), V, 'One', 'Chan A', '4:05'), tile(id(6), V, 'Six', 'Chan E', '1:00')]),
             shelf({ headerRenderer: { shelfHeaderRenderer: { title: { simpleText: 'Plain title' } } } }, many)]);
         const sh = feedShelves(root);
-        assert.deepStrictEqual(sh.map((x) => x.title), ['Consumer Electronics and more', 'Chan D', '', 'Plain title']);
+        assert.deepStrictEqual(sh.map((x) => x.title), ['Consumer Electronics and more', 'Shorts', 'Chan D', '', 'Plain title']);
         assert.deepStrictEqual(sh[0].items[0], { id: id(1), title: 'One', channel: 'Chan A', duration_s: 245, meta: ['125K views', '1 day ago'] });
         assert.deepStrictEqual(sh[0].items[1].meta, []);
-        assert.deepStrictEqual(sh[1].items.map((x) => x.id), [id(4), id(5)], 'dedup inside a shelf');
-        assert.deepStrictEqual(sh[2].items.map((x) => x.id), [id(1), id(6)], 'a video in two shelves stays in both');
-        assert.strictEqual(sh[3].items.length, 12);
+        assert.deepStrictEqual(sh[1].items.map((x) => [x.id, x.short]), [[id(3), true]], 'the shorts shelf: its tiles are flagged');
+        assert.deepStrictEqual(sh[2].items.map((x) => x.id), [id(4), id(5)], 'dedup inside a shelf');
+        assert.deepStrictEqual(sh[3].items.map((x) => x.id), [id(1), id(6)], 'a video in two shelves stays in both');
+        assert.strictEqual(sh[4].items.length, 12);
         const flat = feedItems(root).map((x) => x.id);
         assert.strictEqual(flat.filter((x) => x === id(1)).length, 1, 'flat items deduped across shelves');
-        assert.deepStrictEqual(flat.slice(0, 5), [id(1), id(2), id(4), id(5), id(6)]);
-        assert.strictEqual(flat.length, 18);
+        assert.deepStrictEqual(flat.slice(0, 6), [id(1), id(2), id(3), id(4), id(5), id(6)]);
+        assert.strictEqual(flat.length, 19);
         const ten = [];
         for (let i = 0; i < 10; i++) ten.push(shelf(avatar(['S' + i]), [tile(id(200 + i), V, 'T', 'C', '1:00')]));
         assert.deepStrictEqual(feedShelves(page(ten)).map((x) => x.title), ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7']);

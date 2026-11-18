@@ -66,7 +66,7 @@ const SUGGEST = new Map([
 const SLOTS = ['BTN_S1', 'BTN_S2', 'BTN_S3', 'BTN_S4', 'BTN_S5', 'BTN_S6'];
 const TABS = ['home', 'subs', 'wl'];
 const VI = require('./vi');
-const NAMES = { home: 'Trang chủ', subs: 'Kênh đăng ký', wl: 'Xem sau', results: 'Kết quả' };
+const NAMES = { home: 'Trang chủ', subs: 'Kênh đăng ký', wl: 'Xem sau', hist: 'Lịch sử', liked: 'Video đã thích', lib: 'Thư viện', results: 'Kết quả' };
 const FEED_MS = 15000;                                   // a feed with no answer by then is an error on screen
 const SIGNIN_URL = 'https://www.google.com/device';
 
@@ -97,8 +97,9 @@ mgu.run({
         // a feed tab: signed in, (re)load it; signed out, ask for a sign-in code (the daemon says the one shown again).
         // A new device flow starts only from here (show), the account button or the page's "tap" - never on its own
         const openFeed = () => {
-            if (!isFeed(mode)) return;
+            if (!isFeed(mode) && mode !== 'lib') return;
             if (model.auth.state !== 'signed_in') { model.authStart(); return; }
+            if (mode === 'lib') { model.loadPlaylists(); return; }
             model.feed(mode);
             if (mode === 'home') model.feed('wl');
             if (mode === 'subs') model.loadChannels();                    // Home's last shelf (one request at a time: idempotent)
@@ -164,7 +165,7 @@ mgu.run({
         SLOTS.forEach((b, i) => ui.onClick(b, () => search(slots()[i])));
         const goTo = (m) => { show(m); return ui.open('VIEW'); };
         const searchPages = [['BTN_NOW', 'player', 'Đang phát'], ['BTN_RESULTS', 'results', 'Kết quả'],
-            ['BTN_HOME', 'home', 'Trang chủ'], ['BTN_SUBS', 'subs', 'Kênh đăng ký'], ['BTN_WL', 'wl', 'Xem sau']];
+            ['BTN_HOME', 'home', 'Trang chủ'], ['BTN_SUBS', 'subs', 'Kênh đăng ký'], ['BTN_WL', 'wl', 'Xem sau'], ['BTN_LIB', 'lib', 'Thư viện']];
         searchPages.forEach(([id, mode]) => ui.onClick(id, () => goTo(mode)));
         // Sign in: the Home tab shows how (after a failed try, asks again). Sign out: pressed twice within 5 s
         let signOutArmed = null;
@@ -478,6 +479,10 @@ mgu.run({
                 cv.roundRect(x - 18, y - 6, 36, 24, 5, c); tri(cv, x + 1, y + 6, 12, bg);
             }],
             ['wl', 'Xem sau', (cv, x, y, c) => { cv.arc(x, y, 14, 17.5, 0, 360, c); cv.line(x, y + 1, x, y - 9, 3.5, c); cv.line(x, y, x + 7, y + 5, 3.5, c); }],
+            ['lib', 'Thư viện', (cv, x, y, c) => {        // a stack of videos
+                cv.roundRect(x - 11, y - 18, 22, 3, 1.5, c); cv.roundRect(x - 15, y - 12, 30, 3, 1.5, c);
+                cv.strokeRoundRect(x - 18, y - 6, 36, 24, 5, 3.5, c); tri(cv, x + 1, y + 6, 12, c);
+            }],
         ];
         const SETTINGS = ['settings', 'Cài đặt', (cv, x, y, c) => {
             cv.arc(x, y, 5, 10, 0, 360, c);
@@ -489,7 +494,7 @@ mgu.run({
         // while something plays: back to the player (the bar's Now playing, where the kit runs the screen)
         const PLAYING = ['player', 'Đang phát', (cv, x, y, c) => { [10, 20, 14].forEach((h, k) => cv.roundRect(x - 15 + k * 11, y + 8 - h, 8, h + 8, 2, c)); }];
         function drawRail(cv) {
-            const sel = mode === 'results' ? 'search' : mode === 'channel' ? 'subs' : mode, bottom = H + (cv.own ? cv.extra : 0);
+            const sel = mode === 'results' ? 'search' : mode === 'channel' ? (model.chan && /^VL/.test(model.chan.id) ? 'lib' : 'subs') : mode === 'hist' || mode === 'liked' ? 'lib' : mode, bottom = H + (cv.own ? cv.extra : 0);
             const items = cv.own ? RAIL.concat(model.active() ? [PLAYING, SETTINGS] : [SETTINGS]) : RAIL;
             const pitch = Math.min(100, (bottom - 156) / (items.length - 1));   // (the page down to the screen's bottom where it reaches)
             const tileH = Math.min(84, Math.floor(pitch) - 4);
@@ -590,11 +595,11 @@ mgu.run({
             if (!model.connected) return say(cv, OFF, OFF2);
             if (!c) return say(cv, 'Chọn kênh trong Kênh đăng ký');
             if (!c.items.length) return say(cv, c.loading ? 'Đang tải ' + (c.title || 'kênh') + '...' : c.error === 'feed offline' ? 'Không kết nối được dịch vụ video — kiểm tra Internet trên xe' : VI.error(c.error) || 'Kênh này chưa có video', c.title || null);
-            const hid = hidden.indexOf(c.title) >= 0;
+            const isList = /^VL/.test(c.id), hid = hidden.indexOf(c.title) >= 0;
             const tog = { id: '::hide', title: hid ? 'Hiện kênh này' : 'Ẩn kênh này', sub: hid ? 'Đã ẩn khỏi Trang chủ, Kênh đăng ký và Tìm kiếm' : 'Ẩn khỏi Trang chủ, Kênh đăng ký và Tìm kiếm',
                 act: () => toggleHidden(c.title), glyph: hid ? SHOW : BLOCK };
             drawPage(cv, (c.shelves && c.shelves.length ? c.shelves : [{ title: 'Video', items: c.items, grid: true }])
-                .map((s, i) => (i === 0 ? Object.assign({}, s, { title: c.title + (s.title ? ' · ' + s.title : ''), items: [tog].concat(s.items) }) : s)));
+                .map((s, i) => (i === 0 ? Object.assign({}, s, { title: c.title + (s.title ? ' · ' + s.title : ''), items: isList ? s.items : [tog].concat(s.items) }) : s)));
         }
 
         // a shelf's arrow for touch: shifts it by four tiles. Its target goes before the tiles' (a tap on it is not
@@ -712,6 +717,21 @@ mgu.run({
             if (!model.results.length) return say(cv, model.q ? 'Không tìm thấy kết quả cho "' + model.q + '"' : 'Chọn Tìm kiếm để tìm video', model.q ? 'Thử từ khóa khác' : null);
             drawPage(cv, [{ title: 'Kết quả cho “' + model.q + '”', items: shown(model.results), grid: true }]);
         }
+        const EMPTY = { wl: ['Danh sách Xem sau đang trống', 'Video lưu để xem sau sẽ xuất hiện ở đây'],
+            hist: ['Lịch sử xem đang trống', 'Video bạn đã xem sẽ xuất hiện ở đây'], liked: ['Chưa có video đã thích', 'Video bạn bấm Thích sẽ xuất hiện ở đây'] };
+        // Library: History, Liked videos and the account's playlists (a playlist opens as a channel page does)
+        const HIST = (cv, cx, cy, c) => { cv.arc(cx, cy, 30, 36, 0, 360, c); cv.line(cx, cy + 1, cx, cy - 18, 6, c); cv.line(cx, cy, cx + 14, cy + 9, 6, c); };
+        const THUMB = (cv, cx, cy, c) => { cv.roundRect(cx - 28, cy - 4, 14, 30, 4, c); cv.polyline([[cx - 8, cy + 24], [cx - 8, cy - 2], [cx + 6, cy - 22], [cx + 14, cy - 18], [cx + 8, cy - 4], [cx + 28, cy - 4], [cx + 24, cy + 24], [cx - 8, cy + 24]], 5, c); };
+        function drawLib(cv) {
+            if (!model.connected) return say(cv, OFF, OFF2);
+            if (model.auth.state === 'unsupported') return say(cv, 'Cập nhật dịch vụ jap-ridetube-d để đăng nhập');
+            if (model.auth.state !== 'signed_in') return drawSignIn(cv);
+            const l = model.lists, items = [
+                { id: '::hist', title: 'Lịch sử', sub: 'Video đã xem', act: () => show('hist'), glyph: HIST },
+                { id: '::liked', title: 'Video đã thích', sub: 'Video bạn đã bấm Thích', act: () => show('liked'), glyph: THUMB }].concat(l ? l.items : []);
+            const sub = !l || (l.loading && !l.items.length) ? 'Đang tải danh sách phát…' : l.error ? VI.error(l.error === 'feed offline' ? 'feed offline' : l.error) : (l.items.length ? l.items.length + ' danh sách phát' : 'Chưa có danh sách phát');
+            drawPage(cv, [{ title: 'Thư viện', sub, items, chan: true }]);
+        }
         function drawFeed(cv, which) {
             const f = model.feeds[which], a = model.auth.state;
             if (!model.connected) return say(cv, OFF, OFF2);
@@ -720,7 +740,7 @@ mgu.run({
             const chans = which === 'subs' && model.chans && model.chans.items.length;   // the channels show without the videos
             if ((!f || !f.items.length) && !chans) {
                 return say(cv, !f || f.loading ? 'Đang tải ' + NAMES[which] + '...' : f.error === 'feed offline' ? 'Không kết nối được dịch vụ video — kiểm tra Internet trên xe'
-                    : f.error ? NAMES[which] + ': ' + VI.error(f.error) : which === 'wl' ? 'Danh sách Xem sau đang trống' : 'Chưa có video', which === 'wl' && f && !f.loading && !f.error ? 'Video lưu để xem sau sẽ xuất hiện ở đây' : null);
+                    : f.error ? NAMES[which] + ': ' + VI.error(f.error) : EMPTY[which] ? EMPTY[which][0] : 'Chưa có video', EMPTY[which] && f && !f.loading && !f.error ? EMPTY[which][1] : null);
             }
             let secs;
             if (which === 'home') {
@@ -1044,7 +1064,7 @@ mgu.run({
                 if (mode === 'player' && cv.own && cv.place && cv.place.full) drawFull(cv);
                 else {
                     if (browsing()) drawRail(cv);
-                    if (mode === 'player') drawPlayer(cv); else if (mode === 'channel') drawChannel(cv); else if (mode === 'results') drawResults(cv); else drawFeed(cv, isFeed(mode) ? mode : 'home');
+                    if (mode === 'player') drawPlayer(cv); else if (mode === 'channel') drawChannel(cv); else if (mode === 'results') drawResults(cv); else if (mode === 'lib') drawLib(cv); else drawFeed(cv, isFeed(mode) ? mode : 'home');
                     // where the kit runs the screen the rail has the pages: the header shows just the name
                     if (cv.own) G.frame(cv, theme(), [], -1);
                     else {

@@ -211,6 +211,14 @@ async function clientAndModel() {
     m.feed('wl');
     d.send({ ev: 'feed', which: 'wl', error: 'feed offline' });
     await until(() => m.feeds.wl.error === 'feed offline', 2000, 'feed error');
+    // Library: playlists (VL ids only), the history and liked feeds are feeds like the others
+    assert.ok(m.loadPlaylists() && m.lists.loading);
+    await until(() => d.cmds('playlists').length === 1, 2000, 'playlists cmd');
+    d.send({ ev: 'playlists', items: [{ id: 'VLPLabc', title: 'Nhạc', sub: '3 video' }, { id: 'UCbad', title: 'x' }, null] });
+    await until(() => !m.lists.loading, 2000, 'playlists');
+    assert.deepStrictEqual(m.lists.items, [{ id: 'VLPLabc', title: 'Nhạc', sub: '3 video' }]);
+    assert.ok(m.feed('hist') && m.feed('liked'));
+    await until(() => d.cmds('feed').slice(-2).map((x) => x.which).join() === 'hist,liked', 2000, 'hist, liked cmds');
     assert.strictEqual(m.error, null, 'a feed error is not a playback error');
     d.got.length = 0;
     assert.ok(m.signOut());
