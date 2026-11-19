@@ -108,7 +108,7 @@ mgu.run({
         function show(m) {
             if (m !== mode) { dirty = true; if (laid.mode === mode && laid.where[focusKey]) backKey[mode] = focusKey; }   // (a tile of this page)
             mode = m;
-            if (m !== 'player') browse = m; else wake();
+            if (m !== 'player') { browse = m; listOpen = false; } else wake();
             openFeed(); sync(); labels();
         }
         function goBack(m) {
@@ -229,6 +229,7 @@ mgu.run({
             if (played.indexOf(id) < 0) played.push(id);
             if (played.length > 200) played.shift();
             nextAt = 0;
+            listOpen = false;
             if (model.id === id && model.active()) return;
             model.play(id, rect(), fillEnabled(), it, { quality: settings.get('quality'), skip: sbSkip() });
             model.loadRelated(id);
@@ -358,11 +359,11 @@ mgu.run({
             wake(); changed();
         }
         setInterval(() => { try { batteryGuard(); } catch (e) { log.error('battery', e); } }, 1000);
-        let ovUntil = 0, qrUntil = 0;   // qrUntil: the On phone QR card shows until then
+        let ovUntil = 0, qrUntil = 0, listOpen = false;   // qrUntil: the On phone QR card shows until then; listOpen: the Up next panel
         function wake() { ovUntil = Date.now() + OVERLAY_MS; dirty = true; }
         // it stays while there is no moving picture to look at
         const pinned = () => (scrub && scrub.id === model.id) || model.state !== 'playing' || !videoShown || noVideo() || !!askSeg();
-        const overlay = () => pinned() || Date.now() < ovUntil || Date.now() < qrUntil;
+        const overlay = () => pinned() || Date.now() < ovUntil || Date.now() < qrUntil || listOpen;
         // a tap beside the controls (no target): hides them
         if (ctx.onTap) ctx.onTap(() => { if (mode === 'player' && !pinned() && overlay()) { ovUntil = 0; dirty = true; } });
         // the controller pushed left in the player: back to the list it came from; pushed left at a channel's
@@ -887,7 +888,7 @@ mgu.run({
          * the page's px (dx, dy). Hidden, the same keys cover the whole screen and only show it again (the
          * controller stays on its key, so a turn or a press wakes it; a tap anywhere too).
          */
-        const OVK = ['ov:back', 'ov:qr', 'ov:rw', 'ov:play', 'ov:ff', 'ov:q', 'ov:zoom', 'ov:bar'];
+        const OVK = ['ov:back', 'ov:qr', 'ov:list', 'ov:rw', 'ov:play', 'ov:ff', 'ov:q', 'ov:zoom', 'ov:bar'];
         // podcast mode (driving): artwork, title, chapter, the bar with chapter ticks and skipped segments, controls
         // a glove can hit (-10 s, play/pause, +10 s, next in the row), the next video, a skipped-sponsor notice
         function drawPodcast(cv, SW, SH, LX, tg, run, live, progressTarget) {
@@ -969,6 +970,39 @@ mgu.run({
             }
             if (model.state === 'error') cv.text(fit(cv, 'Lỗi: ' + (VI.error(model.error) || 'đã dừng phát'), 28, bw, LIT), x0, SH - 54, 28, '#ff6b6b', LIT);
         }
+        // the Up next panel, over the right of the picture: a thumb, two lines of title and the channel for each of the next videos
+        function drawUpNext(cv, SW, SH, cy, tg, run) {
+            const pw = 520, px = SW - pw - 24, py = 112, rowH = 108, head = 62;
+            const n = Math.max(1, Math.min(4, Math.floor((SH - 170 - py - head) / rowH))), ph = head + n * rowH + 8;
+            cv.roundRect(px, py, pw, ph, 20, '#141414eb');
+            cv.text('Tiếp theo', px + 28, py + 42, 28, '#ffffff', LITB);
+            if (!queue.length) {
+                cv.text(model.related && model.related.id === model.id ? 'Chưa có gợi ý cho video này' : 'Đang tải gợi ý…', px + 28, py + head + 52, 24, C.dim, LIT);
+                return;
+            }
+            queue.slice(0, n).forEach((r, i) => {
+                const ry = py + head + i * rowH, key = 'ov:n' + i, f = focusKey === key, tw = 160, th2 = 90, tx = px + 20;
+                if (f) cv.roundRect(px + 8, ry - 4, pw - 16, rowH - 4, 14, '#ffffff26');
+                const th = model.thumbs[r.id];
+                if (!th) model.wantThumb(r.id);
+                const pid = th && cv.place ? slot(r.id, th) : null;
+                if (pid) cv.picture(pid, tx, ry + 4, tw, th2, 8); else cv.roundRect(tx, ry + 4, tw, th2, 8, C.ph);
+                if (r.duration_s > 0) {
+                    const d = clock(r.duration_s * 1000), dw = cv.textWidth(d, 16, LITB) + 12;
+                    cv.roundRect(tx + tw - dw - 4, ry + th2 - 22, dw, 22, 4, '#000000cc');
+                    cv.text(d, tx + tw - dw + 2, ry + th2 - 5, 16, '#ffffff', LITB);
+                }
+                const x2 = tx + tw + 18, w2 = pw - (x2 - px) - 22;
+                const words = String(r.title || r.id).split(/\s+/).filter(Boolean);
+                let l1 = '', k = 0;
+                for (; k < words.length; k++) { const t = l1 ? l1 + ' ' + words[k] : words[k]; if (l1 && cv.textWidth(t, 22, LITB) > w2) break; l1 = t; }
+                cv.text(fit(cv, l1, 22, w2, LITB), x2, ry + 28, 22, '#ffffff', LITB);
+                const l2 = words.slice(k).join(' ');
+                if (l2) cv.text(fit(cv, l2, 22, w2, LITB), x2, ry + 54, 22, '#ffffff', LITB);
+                if (r.channel) cv.text(fit(cv, r.channel, 20, w2, LIT), x2, ry + (l2 ? 82 : 58), 20, '#aaaaaa', LIT);
+                tg(px + 8, ry - 4, pw - 16, rowH - 4, run(() => { listOpen = false; play(r.id, r, queue); }), key, 14);
+            });
+        }
         function drawFull(cv) {
             const pl = cv.place, s = pl.scale, SW = pl.w / s, SH = pl.h / s, dx = pl.ox / s, dy = pl.oy / s;
             cv.chrome = null;              // no header or bar composed over it (display.js present)
@@ -1008,6 +1042,14 @@ mgu.run({
                     cv.strokeRoundRect(px - 10, by - 17, 20, 34, 4, 3, c); cv.fillRect(px - 4, by + 10, 8, 3, c);
                 });
                 cv.text('Điện thoại', px - 42, by + 9, 24, '#ffffff', Object.assign({}, LIT, { align: 'right' }));
+            }
+            // top right, Up next: the panel of what plays after this (the related videos / the rest of the list)
+            if (model.id) {
+                const lx = SW - 420;
+                ctl('ov:list', lx, by, 30, () => { listOpen = !listOpen; qrUntil = 0; }, (c) => {
+                    [-9, 0, 9].forEach((o) => { cv.fillRect(lx - 13, by + o - 1, 5, 3, c); cv.fillRect(lx - 4, by + o - 1, 17, 3, c); });
+                });
+                cv.text('Tiếp theo', lx - 42, by + 9, 24, listOpen ? '#3ea6ff' : '#ffffff', Object.assign({}, LIT, { align: 'right' }));
             }
             if (model.id && qrUntil > Date.now()) {
                 const url = 'https://youtu.be/' + model.id + (model.elapsed > 5000 ? '?t=' + Math.floor(model.elapsed / 1000) : ''), mod = 8;
@@ -1052,7 +1094,10 @@ mgu.run({
                     else { cv.roundRect(cx - 17, cy - 22, 12, 44, 3, c); cv.roundRect(cx + 5, cy - 22, 12, 44, 3, c); }
                 });
                 skip('ov:ff', cx + 210, 1, 10000);
-                // right: Video quality (a press takes the next one; the video starts again there) and zoom (fill crops)
+                // right: Video quality (a press takes the next one; the video starts again there) and zoom (fill crops);
+                // the Up next panel takes that place while it is open
+                if (listOpen) drawUpNext(cv, SW, SH, cy, tg, run);
+                else {
                 const qv = String(settings.get('quality') || 'auto'), fl = fillEnabled(), qx = SW - 330, zx = SW - 150;
                 ctl('ov:q', qx, cy, 42, () => { const q = QUALITIES[(QUALITIES.indexOf(qv) + 1) % QUALITIES.length]; settings.set('quality', q); },
                     (c) => cv.text(qv === 'auto' ? 'Tự động' : qv + 'p', qx, cy + 8, 22, c, { literal: true, font: 'bold', align: 'center' }));
@@ -1062,6 +1107,7 @@ mgu.run({
                     if (fl) cv.fillRect(zx - 22, cy - 15, 44, 30, c); else cv.fillRect(zx - 12, cy - 15, 24, 30, c);
                 });
                 cv.text(fl ? 'Vừa khung' : 'Lấp đầy', zx, cy + 76, 22, '#dddddd', { literal: true, align: 'center' });
+                }
             } else if (model.state === 'error' && model.id && model.connected) {
                 ctl('ov:play', cx, cy, 58, again, (c) => retryGlyph(cv, cx, cy, 26, c));
                 cv.text('Thử lại', cx, cy + 100, 26, '#dddddd', { literal: true, align: 'center' });

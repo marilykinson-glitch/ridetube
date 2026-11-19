@@ -1,5 +1,9 @@
 # Changelog
 
+## App 0.3.33, service 0.3.24
+
+- Player: a Tiếp theo (Up next) button on the overlay opens a panel over the right of the picture with the next videos (thumbnail, length, two lines of title, channel). Press one to play it and carry on from there; the button closes the panel. The panel takes the place of the Quality and Zoom buttons while open.
+
 ## App 0.3.32, service 0.3.24
 
 - A fatal playback error while an underrun recovery is under way now cancels the recovery: it no longer opens the audio again after the app has gone to the error screen (the sound kept playing behind the error).

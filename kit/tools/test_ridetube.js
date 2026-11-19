@@ -369,7 +369,7 @@ async function appFrames() {
         assert.deepStrictEqual(bar(), [], 'no bar where the kit runs the screen');
         assert.ok(pl.extra > 0, 'so the page reaches the screen bottom: extra ' + pl.extra);
         assert.deepStrictEqual(frame().vrect, [0, 0, pl.w, pl.h], 'the player: the video over the whole screen at once');
-        assert.deepStrictEqual(keys(), ['ov:back', 'ov:qr', 'ov:rw', 'ov:play', 'ov:ff', 'ov:q', 'ov:zoom', 'ov:bar'], 'the overlay controls');
+        assert.deepStrictEqual(keys(), ['ov:back', 'ov:qr', 'ov:list', 'ov:rw', 'ov:play', 'ov:ff', 'ov:q', 'ov:zoom', 'ov:bar'], 'the overlay controls');
         // Quality: auto -> 720 (the setting too); zoom: whole picture (default, 0.3.6) -> fill
         disp.pageTargets.find((t) => t.key === 'ov:q').run();
         await lastIs(d, { cmd: 'quality', quality: '720' }, 'Quality: the next one');
@@ -396,7 +396,7 @@ async function appFrames() {
         hu.ctx.settings.set('quality', 'auto');
         disp.pageTargets.find((t) => t.key === 'ov:qr').run();
         await hu.loopFn();
-        assert.deepStrictEqual(keys(), ['ov:back', 'ov:qr', 'ov:qrcard'], 'On phone: the QR card over the controls');
+        assert.deepStrictEqual(keys(), ['ov:back', 'ov:qr', 'ov:list', 'ov:qrcard'], 'On phone: the QR card over the controls');
         disp.pageTargets.find((t) => t.key === 'ov:qrcard').run();
         await hu.loopFn();
         disp.pageTargets.find((t) => t.key === 'ov:play').run();
@@ -446,7 +446,7 @@ async function appFrames() {
         disp.onTap(800, 300);
         await hu.loopFn();
         const hid = disp.pageTargets;
-        assert.ok(hid.length === 8 && hid.every((t) => t.w > 1000 && t.h > 500), 'a tap beside them: hidden, each key the whole screen');
+        assert.ok(hid.length === 9 && hid.every((t) => t.w > 1000 && t.h > 500), 'a tap beside them: hidden, each key the whole screen');
         assert.deepStrictEqual(frame().vrect, [0, 0, pl.w, pl.h], 'the video stays whole');
         const pauses = d.cmds('pause').length;
         hid.find((t) => t.key === 'ov:play').run();       // (as the controller pressed on its key, or a tap)
@@ -459,6 +459,20 @@ async function appFrames() {
         await hu.loopFn();
         assert.ok(disp.pageTargets.find((t) => t.key === 'ov:rw').w < 300, 'the controller shows it');
         console.log('ok   full-screen player: overlay controls, hides on a tap, a tap or the controller shows it');
+        // Up next: a button on the overlay; its panel takes the place of Quality and Zoom; again, they come back
+        const upBtn = disp.pageTargets.find((t) => t.key === 'ov:list');
+        assert.ok(upBtn && upBtn.w < 300, 'the Up next button: ' + keys());
+        assert.ok(disp.pageTargets.some((t) => t.key === 'ov:q'), 'Quality there');
+        d.send({ ev: 'related', id: 'aaa', items: [{ id: 'rel00000001', title: 'Related one', channel: 'Ch', duration_s: 125 }, { id: 'rel00000002', title: 'Related two with a much longer title that has to wrap onto a second line', channel: 'Ch2' }] });
+        await sleep(150);
+        upBtn.run();
+        await hu.loopFn();
+        assert.ok(!disp.pageTargets.some((t) => t.key === 'ov:q') && disp.pageTargets.some((t) => t.key === 'ov:list'), 'the panel instead of Quality and Zoom: ' + keys());
+        assert.ok(keys().indexOf('ov:n0') >= 0 && keys().indexOf('ov:n1') >= 0, 'the next videos are rows: ' + keys());
+        disp.pageTargets.find((t) => t.key === 'ov:list').run();
+        await hu.loopFn();
+        assert.ok(disp.pageTargets.some((t) => t.key === 'ov:q'), 'closed again');
+        console.log('ok   Up next panel opens and closes from the overlay');
         // driving: podcast mode - no picture, the big controls always there (no overlay to wake)
         speedH({ speedVehicleCentreOfGravity: 50 * 64 });
         const seeks = d.cmds('seek').length;
