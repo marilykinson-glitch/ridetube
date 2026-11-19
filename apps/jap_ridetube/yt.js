@@ -163,7 +163,8 @@ class Model {
             }
         } else if (m.ev === 'related') {
             if (m.error || m.id !== this.id) return;                                    // none, or for a video no longer playing
-            this.related = { id: m.id, items: valid(m.items, 30) };
+            const i = m.info && typeof m.info === 'object' ? m.info : null, str = (x, n) => String(x || '').slice(0, n);
+            this.related = { id: m.id, items: valid(m.items, 30), info: i && { title: str(i.title, 200), channel: str(i.channel, 100), subs: str(i.subs, 60), views: str(i.views, 60), date: str(i.date, 60), desc: str(i.desc, 700) } };
             this._prune();
         } else if (m.ev === 'playlists') {
             if (!this.lists) return;

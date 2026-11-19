@@ -1,5 +1,10 @@
 # Changelog
 
+## App 0.3.35, service 0.3.25
+
+- Player, Up next panel: a second tab, Thông tin (Info): views, date, the channel and its subscribers, and the description of the video. Read from the same watch-next answer as the Up next list (the `related` event now carries `info`; when the answer has none, the log says what it holds instead).
+- An underrun recovery that was cancelled between its pause and its resume (a fatal error came in) no longer starts the audio again.
+
 ## App 0.3.34, service 0.3.24
 
 - Player: a long title no longer runs under the Tiếp theo and Điện thoại buttons (it is cut before them).

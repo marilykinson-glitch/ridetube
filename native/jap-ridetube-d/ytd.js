@@ -380,6 +380,29 @@ function videoTiles(o) {
     })(o);
     return out;
 }
+// A watch-next (/next) answer -> what the video's page says about it: {title, channel, subs, views, date, desc}, or null.
+// The renderers differ by client (videoMetadataRenderer on the TV's; the web's primary/secondary info), so every one that is there is read.
+function videoInfo(root) {
+    const f = {};
+    (function walk(o, d) {
+        if (!o || typeof o !== 'object' || d > 40) return;
+        ['videoMetadataRenderer', 'videoPrimaryInfoRenderer', 'videoSecondaryInfoRenderer'].forEach((k) => { if (o[k] && typeof o[k] === 'object' && !f[k]) f[k] = o[k]; });
+        Object.keys(o).forEach((k) => walk(o[k], d + 1));
+    })(root, 0);
+    const m = f.videoMetadataRenderer || {}, p = f.videoPrimaryInfoRenderer || {}, s = f.videoSecondaryInfoRenderer || {};
+    const vc = (m.viewCount && m.viewCount.videoViewCountRenderer) || (p.viewCount && p.viewCount.videoViewCountRenderer) || {};
+    const own = (m.owner && m.owner.videoOwnerRenderer) || (s.owner && s.owner.videoOwnerRenderer) || {};
+    const clean = (x, n) => String(x || '').replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, n);
+    const info = {
+        title: clean(runsText(m.title) || runsText(p.title), 200),
+        channel: clean(runsText(own.title), 100),
+        subs: clean(runsText(own.subscriberCountText), 60),
+        views: clean(runsText(vc.viewCount) || runsText(vc.shortViewCount), 60),
+        date: clean(runsText(m.publishedTimeText) || runsText(m.dateText) || runsText(p.dateText) || runsText(p.relativeDateText), 60),
+        desc: clean(runsText(m.description) || runsText(s.description) || runsText(s.attributedDescription && { simpleText: s.attributedDescription.content }), 700),
+    };
+    return Object.keys(info).some((k) => info[k]) ? info : null;
+}
 // A TVHTML5 browse answer -> its video tiles wherever they sit (shelves, tabs, the playlist), each id once.
 function feedItems(root) { return videoTiles(root); }
 const SHELF_MAX = 8, SHELF_TILES = 12;
@@ -1162,7 +1185,7 @@ Daemon.prototype.search = async function (q) {
 Daemon.prototype.related = async function (id) {
     if (!ID_RE.test(String(id))) return this.emit({ ev: 'error', msg: 'bad id' });
     const c = this.relatedKept || (this.relatedKept = {}), k = c[id];
-    if (k && Date.now() - k.t < 600000) return this.emit({ ev: 'related', id: id, items: k.items });
+    if (k && Date.now() - k.t < 600000) return this.emit({ ev: 'related', id: id, items: k.items, info: k.info || null });
     const ask = (tok) => this.account.json('POST', YT + '/youtubei/v1/next', { context: { client: TV_CLIENT }, videoId: id },
         tok ? { Authorization: 'Bearer ' + tok } : null);
     let r;
@@ -1176,10 +1199,12 @@ Daemon.prototype.related = async function (id) {
         return this.emit({ ev: 'related', id: id, error: 'related offline' });
     }
     const items = feedItems(r.j).filter((x) => x.id !== id).slice(0, 30);
+    const info = videoInfo(r.j);
+    if (!info) this.log('related ' + id + ': no video info in the answer (top: ' + Object.keys(r.j).join(',') + '; contents: ' + Object.keys(r.j.contents || {}).join(',') + ')');
     const keys = Object.keys(c);
     if (keys.length > 20) delete c[keys[0]];
-    c[id] = { t: Date.now(), items: items };
-    return this.emit({ ev: 'related', id: id, items: items });
+    c[id] = { t: Date.now(), items: items, info: info };
+    return this.emit({ ev: 'related', id: id, items: items, info: info });
 };
 Daemon.prototype.thumb = async function (id) {
     if (!ID_RE.test(String(id))) return this.emit({ ev: 'error', msg: 'bad id' });
@@ -1678,7 +1703,12 @@ Daemon.prototype.onPlaybackError = function (v) {
             this.log('audio: underrun at ' + this.elapsed + ', starting the player again there');
             if (this.state !== 'playing') return;   // paused: the player is stopped, nothing to start again
             this.recovering = true;
-            (async () => { await this.pause(); await this.resume(); })()
+            (async () => {
+                const gen = this.gen;
+                await this.pause();
+                if (gen !== this.gen) return;   // a fatal error / Stop / new video came in meanwhile: nothing to start again
+                await this.resume();
+            })()
                 .catch((e) => this.log('underrun recovery: ' + e))
                 .then(() => { this.recovering = false; });
             return;

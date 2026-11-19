@@ -229,7 +229,7 @@ mgu.run({
             if (played.indexOf(id) < 0) played.push(id);
             if (played.length > 200) played.shift();
             nextAt = 0;
-            listOpen = false;
+            listOpen = false; listTab = 'next';
             if (model.id === id && model.active()) return;
             model.play(id, rect(), fillEnabled(), it, { quality: settings.get('quality'), skip: sbSkip() });
             model.loadRelated(id);
@@ -359,7 +359,7 @@ mgu.run({
             wake(); changed();
         }
         setInterval(() => { try { batteryGuard(); } catch (e) { log.error('battery', e); } }, 1000);
-        let ovUntil = 0, qrUntil = 0, listOpen = false;   // qrUntil: the On phone QR card shows until then; listOpen: the Up next panel
+        let ovUntil = 0, qrUntil = 0, listOpen = false, listTab = 'next';   // qrUntil: the On phone QR card shows until then; listOpen: the Up next panel
         function wake() { ovUntil = Date.now() + OVERLAY_MS; dirty = true; }
         // it stays while there is no moving picture to look at
         const pinned = () => (scrub && scrub.id === model.id) || model.state !== 'playing' || !videoShown || noVideo() || !!askSeg();
@@ -972,12 +972,46 @@ mgu.run({
         }
         // the Up next panel, over the right of the picture: a thumb, two lines of title and the channel for each of the next videos
         function drawUpNext(cv, SW, SH, cy, tg, run) {
-            const pw = 520, px = SW - pw - 24, py = 112, rowH = 108, head = 62;
-            const n = Math.max(1, Math.min(4, Math.floor((SH - 170 - py - head) / rowH))), ph = head + n * rowH + 8;
+            const pw = 520, px = SW - pw - 24, py = 112, rowH = 108, head = 62, avail = SH - 170 - py;
+            const n = Math.max(1, Math.min(4, Math.floor((avail - head - 8) / rowH))), info = listTab === 'info';
+            const ph = info ? Math.max(head + rowH + 8, avail) : head + n * rowH + 8;
             cv.roundRect(px, py, pw, ph, 20, '#141414eb');
-            cv.text('Tiếp theo', px + 28, py + 42, 28, '#ffffff', LITB);
+            // the two tabs: Up next, Info
+            [['next', 'Tiếp theo', 'ov:tn'], ['info', 'Thông tin', 'ov:ti']].forEach(([id, label, key], k) => {
+                const tx = px + 28 + k * 190, on = listTab === id, f = focusKey === key, tw = cv.textWidth(label, 28, LITB);
+                if (f) cv.roundRect(tx - 14, py + 8, tw + 28, 48, 24, '#ffffff26');
+                cv.text(label, tx, py + 42, 28, on ? '#ffffff' : '#9a9a9a', LITB);
+                if (on) cv.fillRect(tx, py + 52, tw, 3, '#ffffff');
+                tg(tx - 14, py + 8, tw + 28, 48, run(() => { listTab = id; }), key, 24);
+            });
+            const rel = model.related && model.related.id === model.id ? model.related : null;
+            if (info) {
+                const i = rel && rel.info, x = px + 28, w = pw - 56;
+                if (!i) { cv.text(rel ? 'Chưa có thông tin cho video này' : 'Đang tải thông tin…', x, py + head + 44, 24, C.dim, LIT); return; }
+                let y = py + head + 28;
+                const lines = (text, size, font, max) => {
+                    const out = [];
+                    String(text || '').split('\n').forEach((para) => {
+                        let l = '';
+                        String(para).split(/\s+/).filter(Boolean).forEach((wd) => {
+                            const t = l ? l + ' ' + wd : wd;
+                            if (l && cv.textWidth(t, size, font) > w) { out.push(l); l = wd; } else l = t;
+                        });
+                        out.push(l);
+                    });
+                    return out.slice(0, max);
+                };
+                const stat = [i.views, i.date].filter(Boolean).join('  ·  ');
+                if (stat) { cv.text(fit(cv, stat, 24, w, LITB), x, y, 24, '#ffffff', LITB); y += 36; }
+                const own = [i.channel, i.subs].filter(Boolean).join('  ·  ');
+                if (own) { cv.text(fit(cv, own, 22, w, LIT), x, y, 22, '#cccccc', LIT); y += 38; }
+                const room = Math.max(1, Math.floor((py + ph - 16 - y) / 26));
+                const dl = lines(i.desc, 20, LIT, 60);
+                dl.slice(0, room).forEach((l, k) => cv.text(k === room - 1 && dl.length > room ? fit(cv, l + ' …', 20, w, LIT) : l, x, y + k * 26, 20, '#dddddd', LIT));
+                return;
+            }
             if (!queue.length) {
-                cv.text(model.related && model.related.id === model.id ? 'Chưa có gợi ý cho video này' : 'Đang tải gợi ý…', px + 28, py + head + 52, 24, C.dim, LIT);
+                cv.text(rel ? 'Chưa có gợi ý cho video này' : 'Đang tải gợi ý…', px + 28, py + head + 52, 24, C.dim, LIT);
                 return;
             }
             queue.slice(0, n).forEach((r, i) => {

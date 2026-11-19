@@ -737,7 +737,7 @@ async function main() {
         await stopIdle();
     });
 
-    for (const off of [0, 90, 170, 260, 350]) await t('a fatal error ' + off + ' ms into an underrun recovery (BMW answers in 80 ms): the recovery does not open the audio again', async () => {
+    for (const off of [0, 40, 90, 130, 170, 210, 260, 350]) await t('a fatal error ' + off + ' ms into an underrun recovery (BMW answers in 80 ms): the recovery does not open the audio again', async () => {
         fs.writeFileSync(ctl, ''); setMode('ok');
         await fetchPlay('FFFFFFFFU' + String(10 + off / 10 | 0).padStart(2, '0'));
         tick(5000); await sleep(50);
@@ -907,6 +907,25 @@ async function main() {
         assert.strictEqual(ytCalls('/youtubei/v1/next').length, 1, 'the second ask comes from the 10 min cache');
         c.send({ cmd: 'related', id: 'bad' });
         await c.waitFor((x) => x.ev === 'error' && x.msg === 'bad id');
+        yt.next = keep;
+    });
+
+    await t('related: the video\'s info (views, date, channel, subscribers, description) from the watch-next answer; none when it has none', async () => {
+        const nxt = { contents: { x: { videoMetadataRenderer: { title: { simpleText: 'Big video' },
+            viewCount: { videoViewCountRenderer: { viewCount: { simpleText: '1.234 lượt xem' } } }, publishedTimeText: { simpleText: '3 ngày trước' },
+            description: { runs: [{ text: 'Line one' }, { text: '\nLine two' }] },
+            owner: { videoOwnerRenderer: { title: { runs: [{ text: 'Chan I' }] }, subscriberCountText: { simpleText: '2,5 Tr người đăng ký' } } } } },
+            a: [tile('INFO0000002', 'TILE_CONTENT_TYPE_VIDEO', 'Rel', 'Chan N', '3:00')] } };
+        const keep = yt.next; yt.next = () => ok(nxt);
+        c.clear();
+        c.send({ cmd: 'related', id: 'INFO0000001' });
+        const e = await c.waitFor((x) => x.ev === 'related' && x.id === 'INFO0000001');
+        assert.deepStrictEqual(e.info, { title: 'Big video', channel: 'Chan I', subs: '2,5 Tr người đăng ký', views: '1.234 lượt xem', date: '3 ngày trước', desc: 'Line one\nLine two' });
+        assert.deepStrictEqual(e.items.map((x) => x.id), ['INFO0000002']);
+        yt.next = () => ok({ contents: { a: [tile('INFO0000004', 'TILE_CONTENT_TYPE_VIDEO', 'Rel', 'Chan N', '3:00')] } });
+        c.send({ cmd: 'related', id: 'INFO0000003' });
+        const e2 = await c.waitFor((x) => x.ev === 'related' && x.id === 'INFO0000003');
+        assert.strictEqual(e2.info, null);
         yt.next = keep;
     });
 
