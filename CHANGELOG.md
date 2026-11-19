@@ -1,5 +1,9 @@
 # Changelog
 
+## App 0.3.38, service 0.3.28
+
+- Info tab: the channel name shows even when the answer does not carry it (the playing video's own), and the description is also looked for as attributed text. When the answer has views and dates but no description, the service log says so with the renderers of the answer (`video info without a description ...`).
+
 ## App 0.3.37, service 0.3.27
 
 - Info tab: the search for views, date, subscribers and description no longer reads inside the related videos' blocks (tiles, shelves, lists), so another video's figures are never shown for the playing one; missing, they stay empty.

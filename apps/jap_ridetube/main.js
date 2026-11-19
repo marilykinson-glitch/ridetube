@@ -1009,7 +1009,7 @@ mgu.run({
                 };
                 const stat = [i.views, i.date].filter(Boolean).join('  ·  ');
                 if (stat) { cv.text(fit(cv, stat, 24, w, LITB), x, y, 24, '#ffffff', LITB); y += 36; }
-                const own = [i.channel, i.subs].filter(Boolean).join('  ·  ');
+                const own = [i.channel || model.channel || (model.item(model.id) || {}).channel, i.subs].filter(Boolean).join('  ·  ');
                 if (own) { cv.text(fit(cv, own, 22, w, LIT), x, y, 22, '#cccccc', LIT); y += 38; }
                 const room = Math.max(1, Math.floor((py + ph - 16 - y) / 26));
                 const dl = lines(i.desc, 20, LIT, 60);

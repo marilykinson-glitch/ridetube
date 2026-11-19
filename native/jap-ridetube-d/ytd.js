@@ -409,7 +409,7 @@ function videoInfo(root) {
         (function walk(o, d) {
             if (hit || !o || typeof o !== 'object' || d > 40) return;
             for (const k of names) {
-                if (o[k] && typeof o[k] === 'object') { const t = runsText(o[k]) || runsText(o[k].videoViewCountRenderer && o[k].videoViewCountRenderer.viewCount); if (t) { hit = t; return; } }
+                if (o[k] && typeof o[k] === 'object') { const t = runsText(o[k]) || runsText(o[k].videoViewCountRenderer && o[k].videoViewCountRenderer.viewCount) || (typeof o[k].content === 'string' ? o[k].content : ''); if (t) { hit = t; return; } }
             }
             Object.keys(o).forEach((k) => { if (!OTHERS.test(k)) walk(o[k], d + 1); });
         })(root, 0);
@@ -418,7 +418,7 @@ function videoInfo(root) {
     if (!info.views) info.views = clean(first(['viewCount', 'shortViewCount', 'viewCountText']), 60);
     if (!info.date) info.date = clean(first(['publishedTimeText', 'dateText', 'relativeDateText', 'publishDateText']), 60);
     if (!info.subs) info.subs = clean(first(['subscriberCountText', 'subscribersText']), 60);
-    if (!info.desc) info.desc = clean(first(['description', 'descriptionSnippet', 'shortDescription']), 700);
+    if (!info.desc) info.desc = clean(first(['description', 'descriptionSnippet', 'shortDescription', 'attributedDescription', 'attributedDescriptionBodyText', 'descriptionBodyText', 'videoDescription']), 700);
     return Object.keys(info).some((k) => info[k]) ? info : null;
 }
 // the names of the renderers / view models in an answer (no content): what the log says when the video's info is not found
@@ -1227,6 +1227,7 @@ Daemon.prototype.related = async function (id) {
     }
     const items = feedItems(r.j).filter((x) => x.id !== id).slice(0, 30);
     const info = videoInfo(r.j);
+    if (info && !info.desc) this.log('related ' + id + ': video info without a description (renderers: ' + rendererNames(r.j) + ')');
     if (!info) this.log('related ' + id + ': no video info in the answer (top: ' + Object.keys(r.j).join(',') + '; contents: ' + Object.keys(r.j.contents || {}).join(',') + '; renderers: ' + rendererNames(r.j) + ')');
     const keys = Object.keys(c);
     if (keys.length > 20) delete c[keys[0]];

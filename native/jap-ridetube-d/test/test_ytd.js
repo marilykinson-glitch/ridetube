@@ -931,6 +931,11 @@ async function main() {
         c.send({ cmd: 'related', id: 'INFO0000005' });
         const e3 = await c.waitFor((x) => x.ev === 'related' && x.id === 'INFO0000005');
         assert.ok(e3.info && e3.info.views === '5 N lượt xem' && e3.info.date === 'hôm qua' && e3.info.subs === '10 N', JSON.stringify(e3.info));
+        // a description that comes as {content} (attributed text), found too
+        yt.next = () => ok({ contents: { z: { panel: { attributedDescription: { content: 'Described here' }, viewCount: { simpleText: '7 lượt xem' } } } } });
+        c.send({ cmd: 'related', id: 'INFO0000009' });
+        const e5 = await c.waitFor((x) => x.ev === 'related' && x.id === 'INFO0000009');
+        assert.ok(e5.info && e5.info.desc === 'Described here', JSON.stringify(e5.info));
         // another video's block (a related tile) carrying views, date, subscribers and a description: not this video's info
         const rel = tile('INFO0000008', 'TILE_CONTENT_TYPE_VIDEO', 'Rel', 'Chan N', '3:00');
         const other = { tileRenderer: Object.assign({}, rel.tileRenderer || rel, { shortViewCount: { simpleText: 'OTHER views' }, publishedTimeText: { simpleText: 'OTHER date' }, description: { simpleText: 'OTHER desc' }, subscriberCountText: { simpleText: 'OTHER subs' } }) };
