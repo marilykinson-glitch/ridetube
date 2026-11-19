@@ -1033,8 +1033,8 @@ mgu.run({
             const bx = LX + 44, by = 52;
             ctl('ov:back', bx, by, 30, () => goBack(browse), (c) => cv.polyline([[bx + 5, by - 12], [bx - 7, by], [bx + 5, by + 12]], 5, c));
             const ch = model.channel || (model.item(model.id) || {}).channel;
-            if (model.title) cv.text(fit(cv, model.title, 30, SW - LX - 160, LITB), LX + 96, by - 4, 30, '#ffffff', LITB);
-            if (ch) cv.text(fit(cv, ch, 22, SW - LX - 300, LIT), LX + 96, by + 30, 22, '#cccccc', LIT);
+            if (model.title) cv.text(fit(cv, model.title, 30, SW - LX - 700, LITB), LX + 96, by - 4, 30, '#ffffff', LITB);   // (up to the Up next label)
+            if (ch) cv.text(fit(cv, ch, 22, SW - LX - 700, LIT), LX + 96, by + 30, 22, '#cccccc', LIT);
             // top right, On phone: a QR code of the video's public link at this second (nothing is kept on the car)
             if (model.id) {
                 const px = SW - 150;
