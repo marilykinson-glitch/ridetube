@@ -926,6 +926,11 @@ async function main() {
         c.send({ cmd: 'related', id: 'INFO0000003' });
         const e2 = await c.waitFor((x) => x.ev === 'related' && x.id === 'INFO0000003');
         assert.strictEqual(e2.info, null);
+        // the fields under other names / places than the renderers: found wherever they sit
+        yt.next = () => ok({ contents: { z: { deep: { shortViewCount: { simpleText: '5 N lượt xem' }, publishedTimeText: { runs: [{ text: 'hôm qua' }] }, subscriberCountText: { simpleText: '10 N' } } }, a: [tile('INFO0000006', 'TILE_CONTENT_TYPE_VIDEO', 'Rel', 'Chan N', '3:00')] } });
+        c.send({ cmd: 'related', id: 'INFO0000005' });
+        const e3 = await c.waitFor((x) => x.ev === 'related' && x.id === 'INFO0000005');
+        assert.ok(e3.info && e3.info.views === '5 N lượt xem' && e3.info.date === 'hôm qua' && e3.info.subs === '10 N', JSON.stringify(e3.info));
         yt.next = keep;
     });
 

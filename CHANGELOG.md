@@ -1,5 +1,9 @@
 # Changelog
 
+## App 0.3.36, service 0.3.26
+
+- Info tab: the video's views, date, subscribers and description are looked for wherever they sit in the watch-next answer (the TV's answer did not have them under the renderers read before). Without them the tab shows the title and channel. When none are found the service log names the renderers of the answer (`no video info in the answer ... renderers: ...`).
+
 ## App 0.3.35, service 0.3.25
 
 - Player, Up next panel: a second tab, Thông tin (Info): views, date, the channel and its subscribers, and the description of the video. Read from the same watch-next answer as the Up next list (the `related` event now carries `info`; when the answer has none, the log says what it holds instead).

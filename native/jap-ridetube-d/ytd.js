@@ -401,7 +401,32 @@ function videoInfo(root) {
         date: clean(runsText(m.publishedTimeText) || runsText(m.dateText) || runsText(p.dateText) || runsText(p.relativeDateText), 60),
         desc: clean(runsText(m.description) || runsText(s.description) || runsText(s.attributedDescription && { simpleText: s.attributedDescription.content }), 700),
     };
+    // not under the renderers above (the TV's answer changes shape): the first such field wherever it sits
+    const first = (names) => {
+        let hit = null;
+        (function walk(o, d) {
+            if (hit || !o || typeof o !== 'object' || d > 40) return;
+            for (const k of names) {
+                if (o[k] && typeof o[k] === 'object') { const t = runsText(o[k]) || runsText(o[k].videoViewCountRenderer && o[k].videoViewCountRenderer.viewCount); if (t) { hit = t; return; } }
+            }
+            Object.keys(o).forEach((k) => walk(o[k], d + 1));
+        })(root, 0);
+        return hit || '';
+    };
+    if (!info.views) info.views = clean(first(['viewCount', 'shortViewCount', 'viewCountText']), 60);
+    if (!info.date) info.date = clean(first(['publishedTimeText', 'dateText', 'relativeDateText', 'publishDateText']), 60);
+    if (!info.subs) info.subs = clean(first(['subscriberCountText', 'subscribersText']), 60);
+    if (!info.desc) info.desc = clean(first(['description', 'descriptionSnippet', 'shortDescription']), 700);
     return Object.keys(info).some((k) => info[k]) ? info : null;
+}
+// the names of the renderers / view models in an answer (no content): what the log says when the video's info is not found
+function rendererNames(root) {
+    const names = {};
+    (function walk(o, d) {
+        if (!o || typeof o !== 'object' || d > 40) return;
+        Object.keys(o).forEach((k) => { if (/(Renderer|ViewModel|Results)$/.test(k)) names[k] = (names[k] || 0) + 1; walk(o[k], d + 1); });
+    })(root, 0);
+    return Object.keys(names).slice(0, 60).map((k) => k + (names[k] > 1 ? 'x' + names[k] : '')).join(',');
 }
 // A TVHTML5 browse answer -> its video tiles wherever they sit (shelves, tabs, the playlist), each id once.
 function feedItems(root) { return videoTiles(root); }
@@ -1200,7 +1225,7 @@ Daemon.prototype.related = async function (id) {
     }
     const items = feedItems(r.j).filter((x) => x.id !== id).slice(0, 30);
     const info = videoInfo(r.j);
-    if (!info) this.log('related ' + id + ': no video info in the answer (top: ' + Object.keys(r.j).join(',') + '; contents: ' + Object.keys(r.j.contents || {}).join(',') + ')');
+    if (!info) this.log('related ' + id + ': no video info in the answer (top: ' + Object.keys(r.j).join(',') + '; contents: ' + Object.keys(r.j.contents || {}).join(',') + '; renderers: ' + rendererNames(r.j) + ')');
     const keys = Object.keys(c);
     if (keys.length > 20) delete c[keys[0]];
     c[id] = { t: Date.now(), items: items, info: info };

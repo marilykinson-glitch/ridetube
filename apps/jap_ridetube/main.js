@@ -987,7 +987,13 @@ mgu.run({
             const rel = model.related && model.related.id === model.id ? model.related : null;
             if (info) {
                 const i = rel && rel.info, x = px + 28, w = pw - 56;
-                if (!i) { cv.text(rel ? 'Chưa có thông tin cho video này' : 'Đang tải thông tin…', x, py + head + 44, 24, C.dim, LIT); return; }
+                if (!i) {
+                    const it = model.item(model.id) || {}, t = model.title || it.title;
+                    if (t) cv.text(fit(cv, t, 24, w, LITB), x, py + head + 34, 24, '#ffffff', LITB);
+                    if (it.channel) cv.text(fit(cv, it.channel, 22, w, LIT), x, py + head + 72, 22, '#cccccc', LIT);
+                    cv.text(rel ? 'YouTube không trả thêm thông tin cho video này' : 'Đang tải thông tin…', x, py + head + (t ? 118 : 44), 22, C.dim, LIT);
+                    return;
+                }
                 let y = py + head + 28;
                 const lines = (text, size, font, max) => {
                     const out = [];
