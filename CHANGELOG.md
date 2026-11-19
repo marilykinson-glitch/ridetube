@@ -1,5 +1,9 @@
 # Changelog
 
+## App 0.3.37, service 0.3.27
+
+- Info tab: the search for views, date, subscribers and description no longer reads inside the related videos' blocks (tiles, shelves, lists), so another video's figures are never shown for the playing one; missing, they stay empty.
+
 ## App 0.3.36, service 0.3.26
 
 - Info tab: the video's views, date, subscribers and description are looked for wherever they sit in the watch-next answer (the TV's answer did not have them under the renderers read before). Without them the tab shows the title and channel. When none are found the service log names the renderers of the answer (`no video info in the answer ... renderers: ...`).

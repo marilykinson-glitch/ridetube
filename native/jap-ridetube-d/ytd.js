@@ -402,6 +402,8 @@ function videoInfo(root) {
         desc: clean(runsText(m.description) || runsText(s.description) || runsText(s.attributedDescription && { simpleText: s.attributedDescription.content }), 700),
     };
     // not under the renderers above (the TV's answer changes shape): the first such field wherever it sits
+    // never inside another video's own block (the related tiles, shelves and lists): their views and dates are not this video's
+    const OTHERS = /^(tileRenderer|lockupViewModel|shelfRenderer|horizontalListRenderer|gridRenderer|gridVideoRenderer|compactVideoRenderer|videoRenderer|playlistPanelVideoRenderer|compactAutoplayRenderer|secondaryResults|relatedItems|endscreen|playlist|watchNextEndScreenRenderer|pivot)$/i;
     const first = (names) => {
         let hit = null;
         (function walk(o, d) {
@@ -409,7 +411,7 @@ function videoInfo(root) {
             for (const k of names) {
                 if (o[k] && typeof o[k] === 'object') { const t = runsText(o[k]) || runsText(o[k].videoViewCountRenderer && o[k].videoViewCountRenderer.viewCount); if (t) { hit = t; return; } }
             }
-            Object.keys(o).forEach((k) => walk(o[k], d + 1));
+            Object.keys(o).forEach((k) => { if (!OTHERS.test(k)) walk(o[k], d + 1); });
         })(root, 0);
         return hit || '';
     };

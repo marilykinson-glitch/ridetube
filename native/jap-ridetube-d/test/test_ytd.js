@@ -931,6 +931,13 @@ async function main() {
         c.send({ cmd: 'related', id: 'INFO0000005' });
         const e3 = await c.waitFor((x) => x.ev === 'related' && x.id === 'INFO0000005');
         assert.ok(e3.info && e3.info.views === '5 N lượt xem' && e3.info.date === 'hôm qua' && e3.info.subs === '10 N', JSON.stringify(e3.info));
+        // another video's block (a related tile) carrying views, date, subscribers and a description: not this video's info
+        const rel = tile('INFO0000008', 'TILE_CONTENT_TYPE_VIDEO', 'Rel', 'Chan N', '3:00');
+        const other = { tileRenderer: Object.assign({}, rel.tileRenderer || rel, { shortViewCount: { simpleText: 'OTHER views' }, publishedTimeText: { simpleText: 'OTHER date' }, description: { simpleText: 'OTHER desc' }, subscriberCountText: { simpleText: 'OTHER subs' } }) };
+        yt.next = () => ok({ contents: { pivot: { shelfRenderer: { content: { horizontalListRenderer: { items: [other, rel] } } } }, lone: { lockupViewModel: { shortViewCount: { simpleText: 'OTHER views' } } } } });
+        c.send({ cmd: 'related', id: 'INFO0000007' });
+        const e4 = await c.waitFor((x) => x.ev === 'related' && x.id === 'INFO0000007');
+        assert.strictEqual(e4.info, null, 'nothing of the related videos shows as this one: ' + JSON.stringify(e4.info));
         yt.next = keep;
     });
 
