@@ -1,5 +1,10 @@
 # Changelog
 
+## App 0.3.39, service 0.3.28
+
+- Video while driving: with the setting already on, opening the app while the car moves now shows the picture (it came up in audio-only mode, "Chỉ âm thanh · xe đang chạy"). Only switching it on while moving still waits for a stop.
+- Player: the Điện thoại (On phone) button and its QR card are gone; the Tiếp theo button takes the top right.
+
 ## App 0.3.38, service 0.3.28
 
 - Info tab: the channel name shows even when the answer does not carry it (the playing video's own), and the description is also looked for as attributed text. When the answer has views and dates but no description, the service log says so with the renderers of the answer (`video info without a description ...`).

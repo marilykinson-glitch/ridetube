@@ -369,7 +369,7 @@ async function appFrames() {
         assert.deepStrictEqual(bar(), [], 'no bar where the kit runs the screen');
         assert.ok(pl.extra > 0, 'so the page reaches the screen bottom: extra ' + pl.extra);
         assert.deepStrictEqual(frame().vrect, [0, 0, pl.w, pl.h], 'the player: the video over the whole screen at once');
-        assert.deepStrictEqual(keys(), ['ov:back', 'ov:qr', 'ov:list', 'ov:rw', 'ov:play', 'ov:ff', 'ov:q', 'ov:zoom', 'ov:bar'], 'the overlay controls');
+        assert.deepStrictEqual(keys(), ['ov:back', 'ov:list', 'ov:rw', 'ov:play', 'ov:ff', 'ov:q', 'ov:zoom', 'ov:bar'], 'the overlay controls');
         // Quality: auto -> 720 (the setting too); zoom: whole picture (default, 0.3.6) -> fill
         disp.pageTargets.find((t) => t.key === 'ov:q').run();
         await lastIs(d, { cmd: 'quality', quality: '720' }, 'Quality: the next one');
@@ -394,11 +394,6 @@ async function appFrames() {
             { cmd: 'fill', on: true }, { cmd: 'fill', on: false },
         ], 'each change sends exactly one command');
         hu.ctx.settings.set('quality', 'auto');
-        disp.pageTargets.find((t) => t.key === 'ov:qr').run();
-        await hu.loopFn();
-        assert.deepStrictEqual(keys(), ['ov:back', 'ov:qr', 'ov:list', 'ov:qrcard'], 'On phone: the QR card over the controls');
-        disp.pageTargets.find((t) => t.key === 'ov:qrcard').run();
-        await hu.loopFn();
         disp.pageTargets.find((t) => t.key === 'ov:play').run();
         await lastIs(d, { cmd: 'pause' }, 'play / pause on the overlay');
         disp.pageTargets.find((t) => t.key === 'ov:ff').run();
@@ -446,7 +441,7 @@ async function appFrames() {
         disp.onTap(800, 300);
         await hu.loopFn();
         const hid = disp.pageTargets;
-        assert.ok(hid.length === 9 && hid.every((t) => t.w > 1000 && t.h > 500), 'a tap beside them: hidden, each key the whole screen');
+        assert.ok(hid.length === 8 && hid.every((t) => t.w > 1000 && t.h > 500), 'a tap beside them: hidden, each key the whole screen');
         assert.deepStrictEqual(frame().vrect, [0, 0, pl.w, pl.h], 'the video stays whole');
         const pauses = d.cmds('pause').length;
         hid.find((t) => t.key === 'ov:play').run();       // (as the controller pressed on its key, or a tap)

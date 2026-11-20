@@ -81,7 +81,7 @@ mgu.run({
         const parked = Parked.watch(ctx, log, { strict: true });
         // the drive lock: Video while driving counts only once switched on while parked, so a press while moving
         // cannot bring the picture up; switching it off works at once
-        let videoDrivingOk = false;
+        let videoDrivingOk = settings.get('video_driving') === true;   // (on already when the app starts: it was switched on parked; only a switch-on while moving waits for a stop)
         const noVideo = () => {
             const on = settings.get('video_driving') === true, moving = parked.moving();
             videoDrivingOk = moving ? videoDrivingOk && on : on;
@@ -359,11 +359,11 @@ mgu.run({
             wake(); changed();
         }
         setInterval(() => { try { batteryGuard(); } catch (e) { log.error('battery', e); } }, 1000);
-        let ovUntil = 0, qrUntil = 0, listOpen = false, listTab = 'next';   // qrUntil: the On phone QR card shows until then; listOpen: the Up next panel
+        let ovUntil = 0, listOpen = false, listTab = 'next';   // listOpen: the Up next panel
         function wake() { ovUntil = Date.now() + OVERLAY_MS; dirty = true; }
         // it stays while there is no moving picture to look at
         const pinned = () => (scrub && scrub.id === model.id) || model.state !== 'playing' || !videoShown || noVideo() || !!askSeg();
-        const overlay = () => pinned() || Date.now() < ovUntil || Date.now() < qrUntil || listOpen;
+        const overlay = () => pinned() || Date.now() < ovUntil || listOpen;
         // a tap beside the controls (no target): hides them
         if (ctx.onTap) ctx.onTap(() => { if (mode === 'player' && !pinned() && overlay()) { ovUntil = 0; dirty = true; } });
         // the controller pushed left in the player: back to the list it came from; pushed left at a channel's
@@ -888,7 +888,7 @@ mgu.run({
          * the page's px (dx, dy). Hidden, the same keys cover the whole screen and only show it again (the
          * controller stays on its key, so a turn or a press wakes it; a tap anywhere too).
          */
-        const OVK = ['ov:back', 'ov:qr', 'ov:list', 'ov:rw', 'ov:play', 'ov:ff', 'ov:q', 'ov:zoom', 'ov:bar'];
+        const OVK = ['ov:back', 'ov:list', 'ov:rw', 'ov:play', 'ov:ff', 'ov:q', 'ov:zoom', 'ov:bar'];
         // podcast mode (driving): artwork, title, chapter, the bar with chapter ticks and skipped segments, controls
         // a glove can hit (-10 s, play/pause, +10 s, next in the row), the next video, a skipped-sponsor notice
         function drawPodcast(cv, SW, SH, LX, tg, run, live, progressTarget) {
@@ -1073,35 +1073,15 @@ mgu.run({
             const bx = LX + 44, by = 52;
             ctl('ov:back', bx, by, 30, () => goBack(browse), (c) => cv.polyline([[bx + 5, by - 12], [bx - 7, by], [bx + 5, by + 12]], 5, c));
             const ch = model.channel || (model.item(model.id) || {}).channel;
-            if (model.title) cv.text(fit(cv, model.title, 30, SW - LX - 700, LITB), LX + 96, by - 4, 30, '#ffffff', LITB);   // (up to the Up next label)
-            if (ch) cv.text(fit(cv, ch, 22, SW - LX - 700, LIT), LX + 96, by + 30, 22, '#cccccc', LIT);
-            // top right, On phone: a QR code of the video's public link at this second (nothing is kept on the car)
-            if (model.id) {
-                const px = SW - 150;
-                ctl('ov:qr', px, by, 30, () => { qrUntil = qrUntil > Date.now() ? 0 : Date.now() + 30000; }, (c) => {
-                    cv.strokeRoundRect(px - 10, by - 17, 20, 34, 4, 3, c); cv.fillRect(px - 4, by + 10, 8, 3, c);
-                });
-                cv.text('Điện thoại', px - 42, by + 9, 24, '#ffffff', Object.assign({}, LIT, { align: 'right' }));
-            }
+            if (model.title) cv.text(fit(cv, model.title, 30, SW - LX - 430, LITB), LX + 96, by - 4, 30, '#ffffff', LITB);   // (up to the Up next label)
+            if (ch) cv.text(fit(cv, ch, 22, SW - LX - 430, LIT), LX + 96, by + 30, 22, '#cccccc', LIT);
             // top right, Up next: the panel of what plays after this (the related videos / the rest of the list)
             if (model.id) {
-                const lx = SW - 420;
-                ctl('ov:list', lx, by, 30, () => { listOpen = !listOpen; qrUntil = 0; }, (c) => {
+                const lx = SW - 150;
+                ctl('ov:list', lx, by, 30, () => { listOpen = !listOpen; }, (c) => {
                     [-9, 0, 9].forEach((o) => { cv.fillRect(lx - 13, by + o - 1, 5, 3, c); cv.fillRect(lx - 4, by + o - 1, 17, 3, c); });
                 });
                 cv.text('Tiếp theo', lx - 42, by + 9, 24, listOpen ? '#3ea6ff' : '#ffffff', Object.assign({}, LIT, { align: 'right' }));
-            }
-            if (model.id && qrUntil > Date.now()) {
-                const url = 'https://youtu.be/' + model.id + (model.elapsed > 5000 ? '?t=' + Math.floor(model.elapsed / 1000) : ''), mod = 8;
-                const n = QR.encode(url).length, side = (n + 8) * mod, cw = side + 520, chh = side + 60, qx0 = cx - cw / 2, qy0 = cy - chh / 2;
-                cv.roundRect(qx0, qy0, cw, chh, 24, '#212121f2');
-                cv.roundRect(qx0 + 30 - 6, qy0 + 30 - 6, side + 12, side + 12, 18, '#ffffff');
-                QR.draw(cv, url, qx0 + 30, qy0 + 30, mod);
-                cv.text('Xem tiếp trên điện thoại', qx0 + side + 80, qy0 + chh / 2 - 20, 34, '#ffffff', LITB);
-                cv.text('Quét mã để xem tiếp từ ' + clock(model.elapsed), qx0 + side + 80, qy0 + chh / 2 + 24, 22, '#cccccc', LIT);
-                tg(qx0, qy0, cw, chh, () => { qrUntil = 0; wake(); }, 'ov:qrcard', 24);
-                cv.xf();
-                return;
             }
             // middle: -10 s, play / pause, +10 s; preparing: the ring with the percentage
             let mid = null;
