@@ -144,7 +144,7 @@ async function main() {
     const ctl = path.join(tmp, 'fetch.ctl');
     const d = new Daemon({
         someip: someip, srcGen: srcGen, ytdec: fakeYtdec, cacheDir: cache, logDir: tmp, sock: path.join(tmp, 'ctl.sock'),
-        watchdogMs: 800, pictureMs: 600, pictureRetryMs: 2500, tickMs: 200, keep: 20, stateDir: stateDir, noSetuid: true, spare: false, resume: false, fetchRetryMs: [],
+        watchdogMs: 800, audioStartMs: 600000, pictureMs: 600, pictureRetryMs: 2500, tickMs: 200, keep: 20, stateDir: stateDir, noSetuid: true, spare: false, resume: false, fetchRetryMs: [],
         fetcher: [process.execPath, path.join(__dirname, 'fake_ytfetch.js'), ctl],
         accountFile: acct, ytRequest: fakeYt, log: (m) => logs.push(m)
     });
@@ -393,6 +393,28 @@ async function main() {
         setMode('ok');
         c.send({ cmd: 'stop' });
         await c.waitFor((x) => x.ev === 'state' && x.state === 'idle');
+    });
+
+    await t('audio: playing but the player sends no time -> started again by itself (new connection, playFile); 3 times in vain -> error', async () => {
+        await sleep(500); fs.writeFileSync(ytlog, ''); setMode('ok');
+        await playing();
+        calls.length = 0; c.clear();
+        d.opts.audioStartMs = 700;
+        await waitUntil(() => called('playFile').length === 1, 6000);
+        assert.ok(logs.some((l) => /audio: no time from the player/.test(l)));
+        assert.ok(called('connect').length >= 1, 'on a new connection');
+        assert.ok(!c.evs.some((x) => x.ev === 'error'), 'no error yet');
+        // the player comes alive: left alone from then on
+        const n = called('playFile').length;
+        for (let k = 0; k < 12; k++) { tick(1000 + k * 1000); await sleep(150); }   // (played on for 10 s: the count starts again)
+        assert.strictEqual(called('playFile').length, n, 'ticking: no more restarts');
+        assert.strictEqual(d.state, 'playing');
+        // silent for good: three tries, then an error (Try again on screen)
+        const e = await c.waitFor((x) => x.ev === 'error' && /audio does not start/.test(x.msg), 30000);
+        assert.ok(e);
+        assert.strictEqual(called('playFile').length, n + 3);
+        d.opts.audioStartMs = 600000;
+        c.send({ cmd: 'stop' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'idle'); c.clear();
     });
 
     await t('picture: decoding but no frame shown -> ytdec is sought to the clock (no audio call); shown again -> left alone', async () => {

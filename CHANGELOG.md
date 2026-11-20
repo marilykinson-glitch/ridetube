@@ -1,5 +1,9 @@
 # Changelog
 
+## Service 0.3.30 (app 0.3.39)
+
+- A video that opens black and silent: when the state is playing and the BMW player sends no time for 6 s (the playFile was accepted, nothing plays), the player is started again by itself on a new connection, where it was. Three times in vain: an error with Try again instead of a black screen. Logged as `audio: no time from the player ...`.
+
 ## Service 0.3.29 (app 0.3.39)
 
 - Black picture with the sound running: the service now watches the frames actually shown (ytdec's `shown`), not only decoded. No frame shown for 4 s while the sound plays: ytdec is sought to the clock by itself (what scrubbing by hand did; the sound is not touched); twice in vain, ytdec is started again. Logged as `picture: ...`.

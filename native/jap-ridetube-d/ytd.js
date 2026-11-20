@@ -1363,6 +1363,9 @@ Daemon.prototype.play = async function (id, rect, fill, at, quality, skip, resto
     }
     if (gen !== this.gen) return this.audio.release(); // stopped while connecting
     this.ticking = true;
+    this.lastRawAt = Date.now();
+    this.rawFrom = 0;
+    this.audioTries = 0;
     this.spawnYtdec(null);
     this.setState('playing');
     if (this.head && this.fullReady) await this.switchToFull(); // audio.m4a came during the connect
@@ -1649,6 +1652,8 @@ Daemon.prototype.requality = async function (quality) {
 Daemon.prototype.onTime = function (v) {
     if (!this.ticking || !v || typeof v.elapsed !== 'number') return;
     if (!(v.total > 1)) return; // {elapsed:0,total:1} right after playFile
+    this.lastRawAt = Date.now();   // the player runs (whatever we make of this time): what the audio watchdog goes by
+    if (v.elapsed > (this.rawFrom || 0) + 10000) { this.rawFrom = v.elapsed; this.audioTries = 0; }   // it has played on for 10 s: its past stalls are over
     if (this.tickWaiter) { this.tickWaiter(); return; } // resume(): the restarted file plays, its setTime can follow
     if (this.switching || this.headWait) return; // the restart's times, or a paused player
     if (this.settle && Date.now() < this.settle.until && v.elapsed < this.settle.ms - 2000) return; // before our setTime landed
@@ -1827,6 +1832,30 @@ Daemon.prototype.ytdecDied = function (child, why) {
     this.emit({ ev: 'error', msg: 'video failed, audio only' });
     return undefined;
 };
+// Playing, yet the BMW player sends no time (car: a video opens black and silent until Stop and open again, or a seek):
+// the playFile was accepted and nothing plays. After 6 s the player is started again where it was (a new connection,
+// as resume() does); 3 times in vain, it is an error with Try again rather than a black screen.
+Daemon.prototype.audioWatch = function () {
+    if (!this.ticking || this.state !== 'playing' || this.paused || this.headWait || this.switching || this.recovering) return;
+    if (this.stoppedAt !== null && this.stoppedAt !== undefined) return;   // a resume under way
+    const wait = this.opts.audioStartMs || 6000;
+    if (Date.now() - (this.lastRawAt || 0) < wait) return;
+    this.lastRawAt = Date.now();
+    if ((this.audioTries || 0) >= 3) {
+        this.failPlayback('audio does not start').catch((e) => this.log(e));
+        return;
+    }
+    this.audioTries = (this.audioTries || 0) + 1;
+    this.log('audio: no time from the player for ' + wait + ' ms at ' + this.elapsed + ', starting it again (' + this.audioTries + ')');
+    this.recovering = true;
+    (async () => {
+        const gen = this.gen, r = this.restart, pa = !!(r && r.paused);
+        await this.pause();
+        if (gen !== this.gen) return;
+        await this.resume();
+        if (gen === this.gen && r && this.restart === r) r.paused = pa;   // (a start asked paused stays so at its first time)
+    })().catch((e) => this.log('audio restart: ' + e)).then(() => { this.recovering = false; this.lastRawAt = Date.now(); });
+};
 Daemon.prototype.watchdog = function () {
     // the picture given up (two deaths in a row): tried again every 15 s, 4 times a video, so it comes back by itself
     if (!this.child && this.ticking && this.state === 'playing' && this.videoOn && this.deaths >= 2 && this.cur
@@ -1837,6 +1866,7 @@ Daemon.prototype.watchdog = function () {
         this.spawnYtdec(this.elapsed + (Date.now() - this.lastTickAt));
         return;
     }
+    this.audioWatch();
     if (!this.child || this.state !== 'playing' || !this.videoOn || this.eof) return;
     // waiting for video not fetched yet (buffering, or the fetcher ended early): not a stall
     if (this.headWait || this.elapsed + 1000 > this.fetchedMs) { this.lastProgress = Date.now(); return; }
