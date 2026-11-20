@@ -693,6 +693,21 @@ Account.prototype.guestHome = async function () {
     }
     return { items: items.slice(0, FEED_MAX), shelves: shelves };
 };
+// Premium, as far as it is known: said to the app and kept with the account (so the next start knows it at once).
+// From Home's Premium mark (certain), else from the player answers: ads in one = not Premium; three plays in a row without = Premium.
+Account.prototype.setPremium = function (v, why) {
+    const a = this.load();
+    if (!a || a.premium === v) return;
+    if (v === false && this.premium === true) return;   // Home's own mark is not undone by a guess
+    a.premium = v;
+    try { this.save(a); } catch (e) { this.log('premium: ' + e.message); }
+    this.log('premium: ' + v + ' (' + why + ')');
+    this.emit({ ev: 'premium', value: v });
+};
+Account.prototype.sayPremium = function () {
+    const a = this.load();
+    if (a && typeof a.premium === 'boolean') this.emit({ ev: 'premium', value: a.premium });
+};
 // where an answer mentions premium at all (key paths and short values, 8 at most): for the log, to find the account's mark
 function premiumMentions(root) {
     const out = [];
@@ -740,7 +755,7 @@ Account.prototype.loadFeed = async function (which) {
         if (r.status !== 200 || !r.j) throw new Error('browse ' + r.status);
         this.emit({ ev: 'feed', which: which, items: feedItems(r.j).slice(0, FEED_MAX), shelves: feedShelves(r.j) });
         if (which === 'home') {   // a Premium account's Home carries a PREMIUM mark (its logo type); none found: not known, said in the log once
-            if (premiumMark(r.j)) { this.premium = true; this.emit({ ev: 'premium', value: true }); }
+            if (premiumMark(r.j)) { this.premium = true; this.setPremium(true, 'the mark in Home'); this.sayPremium(); }
             else if (!this.premiumLogged) { this.premiumLogged = true; this.log('premium: no mark in the home answer (top: ' + Object.keys(r.j).join(',') + '; mentions: ' + premiumMentions(r.j) + ')'); }
         }
     } catch (e) {
@@ -891,6 +906,7 @@ function Daemon(o) {
     this.child = null;
     this.deaths = 0;
     this.videoOn = true;
+    this.adFree = 0;        // plays in a row whose player answer had no ads (Premium, when Home does not say)
     this.paused = false;
     this.elapsed = 0;
     this.total = 0;
@@ -954,7 +970,8 @@ Daemon.prototype.trackStart = async function (c) {
         const r = await this.account.json('POST', YT + '/youtubei/v1/player', { context: { client: TV_CLIENT }, videoId: c.id },
             { Authorization: 'Bearer ' + await this.account.token(false) });
         // ads in a signed-in player answer: not a Premium account (unless Home said it is)
-        if (r.j && !this.account.premium && (r.j.adPlacements || r.j.playerAds || r.j.adSlots) && this.premiumSaid !== false) { this.premiumSaid = false; this.emit({ ev: 'premium', value: false }); }
+        if (r.j && (r.j.adPlacements || r.j.playerAds || r.j.adSlots)) { this.adFree = 0; this.account.setPremium(false, 'ads in the player answer'); }
+        else if (r.j && r.j.playbackTracking && ++this.adFree >= 3) this.account.setPremium(true, 'three plays without ads');
         const pt = (r.j && r.j.playbackTracking) || {};
         const pb = pt.videostatsPlaybackUrl && pt.videostatsPlaybackUrl.baseUrl, wt = pt.videostatsWatchtimeUrl && pt.videostatsWatchtimeUrl.baseUrl;
         if (!/^https:\/\/s\.youtube\.com\//.test(pb) || !/^https:\/\/s\.youtube\.com\//.test(wt) || this.cur !== c) return;
@@ -1208,7 +1225,7 @@ Daemon.prototype.onLine = function (line) {
     case 'fill': return this.setFill(!!m.on);
     case 'quality': return this.requality(m.quality);
     case 'auth': return this.account.start();
-    case 'auth_status': return this.emit(this.account.status());
+    case 'auth_status': this.emit(this.account.status()); return this.account.sayPremium();
     case 'sign_out': return this.account.signOut();
     case 'feed': return this.account.feed(m.which);
     case 'channels': return this.account.channels();

@@ -1042,6 +1042,23 @@ async function main() {
         yt.browse = kb; yt.search = ks;
     });
 
+    await t('premium: three plays without ads in the player answer -> premium true, kept with the account and said on auth_status; ads -> false', async () => {
+        fs.mkdirSync(path.dirname(acct), { recursive: true, mode: 0o700 });
+        fs.writeFileSync(acct, JSON.stringify({ cid: 'x', sec: 'y', access: 'ACCESS-9', refresh: 'R', exp: Date.now() + 1e7 }), { mode: 0o600 });
+        c.clear(); d.adFree = 0;
+        for (let k = 0; k < 3; k++) await d.trackStart({ id: 'DemoVideo01' });
+        await c.waitFor((x) => x.ev === 'premium' && x.value === true);
+        assert.strictEqual(JSON.parse(fs.readFileSync(acct, 'utf8')).premium, true);
+        c.clear(); c.send({ cmd: 'auth_status' });
+        await c.waitFor((x) => x.ev === 'premium' && x.value === true);
+        const kept = d.account.json;
+        d.account.json = async () => ({ status: 200, j: { adPlacements: [{}] } });
+        await d.trackStart({ id: 'DemoVideo01' });
+        d.account.json = kept;
+        await c.waitFor((x) => x.ev === 'premium' && x.value === false);
+        fs.unlinkSync(acct);
+    });
+
     await t('signed in while the general Home loads: that load answers with the account\'s own Home (asks joined to it are not lost)', async () => {
         c.clear(); yt.calls.length = 0;
         const kb = yt.browse;

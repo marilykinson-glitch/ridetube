@@ -1,5 +1,9 @@
 # Changelog
 
+## Service 0.3.34 (app 0.3.45)
+
+- Premium is also told from the player answers when Home carries no mark: three plays in a row without ads = Premium, ads in one = not. Kept with the account, so the next start shows it at once (`premium: ...` in the log).
+
 ## App 0.3.45, service 0.3.33
 
 - The audio-only (podcast) player screen, unused since 0.3.44, is removed from the code.
