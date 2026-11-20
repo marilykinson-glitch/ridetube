@@ -1,5 +1,10 @@
 # Changelog
 
+## App 0.3.42, service 0.3.33
+
+- A video resumed where it was left no longer starts over on a touch: until the player's setTime lands, its times (the file's start) are not taken as the place, the app is told the resume place at once, and +10 s / -10 s wait for it. A setTime the player dropped is sent once more.
+- Sought past the picture fetched so far (the video is downloaded front to back): the player says so ("Hình chưa tải tới đoạn này — đã tải tới m:ss, tiếng vẫn phát") and the progress bar shows how far the picture is there, instead of a frozen frame with no word.
+
 ## App 0.3.41, service 0.3.32
 
 - Signing in while the general Home loads no longer leaves Home empty: that load answers with the account's own Home.

@@ -1224,7 +1224,8 @@ Daemon.prototype.setState = function (s) {
 Daemon.prototype.sendState = function (pct) {
     this.buffering = this.isBuffering();
     const o = { ev: 'state', state: this.state, pct: pct === undefined ? (this.state === 'preparing' ? this.pct || 0 : null) : pct,
-        id: this.cur ? this.cur.id : null, title: this.cur ? this.cur.title : null, buffering: this.buffering };
+        id: this.cur ? this.cur.id : null, title: this.cur ? this.cur.title : null, buffering: this.buffering,
+        fetched: this.fetcher && isFinite(this.fetchedMs) ? this.fetchedMs : null };   // video fetched up to there (ms); null: all of it
     this.emit(o);
 };
 // playing ahead of the video fetched so far, while the fetcher still writes it
@@ -1537,6 +1538,7 @@ Daemon.prototype.fetchVideo = function (id, dir) {
             }
             else if (m.ev === 'video') {
                 this.fetchedMs = Number(m.ms) || 0;
+                if (Date.now() - (this.fetchedSaid || 0) > 1000 && this.state !== 'preparing') { this.fetchedSaid = Date.now(); this.sendState(); }   // (the app draws how far the picture is there)
                 if (audio || head !== null) pct(70 + 29 * Math.min(1, this.fetchedMs / this.opts.startVideoMs));
             } else if (m.ev === 'done') done = true;
             else if (m.ev === 'error') err = String(m.msg);
@@ -1709,7 +1711,18 @@ Daemon.prototype.onTime = function (v) {
     if (v.elapsed > (this.rawFrom || 0) + 10000) { this.rawFrom = v.elapsed; this.audioTries = 0; }   // it has played on for 10 s: its past stalls are over
     if (this.tickWaiter) { this.tickWaiter(); return; } // resume(): the restarted file plays, its setTime can follow
     if (this.switching || this.headWait) return; // the restart's times, or a paused player
-    if (this.settle && Date.now() < this.settle.until && v.elapsed < this.settle.ms - 2000) return; // before our setTime landed
+    if (this.settle && v.elapsed < this.settle.ms - 2000) {
+        if (Date.now() < this.settle.until) return; // before our setTime landed
+        // it never landed (the player dropped the setTime): once more, rather than playing on from where the file started
+        if (!this.settle.again) {
+            this.settle.again = true;
+            this.settle.until = Date.now() + 3000;
+            this.log('audio: setTime ' + this.settle.ms + ' did not land (at ' + v.elapsed + '), sent again');
+            this.audio.seek(this.settle.ms);
+            return;
+        }
+    }
+    this.settle = null;
     this.elapsed = v.elapsed;
     this.lastTickAt = Date.now();
     this.total = this.head ? (this.cur.durationMs || v.total) : v.total; // the head's own total is ~60 s
@@ -1722,6 +1735,12 @@ Daemon.prototype.onTime = function (v) {
         this.restart = null;
         if (at > 0) {
             this.seek(at).then(() => (pa && this.state === 'playing' ? this.pause() : undefined)).catch((e) => this.log('resume at: ' + e));
+            // the player's times until the setTime lands are the file's start: not ours (a pause then would hold at 0),
+            // and the app is told where it is now (its +10 s / -10 s go from there)
+            if (this.state === 'playing' && this.elapsed === at) {
+                this.settle = { ms: at, until: Date.now() + 3000 };
+                this.emit({ ev: 'time', elapsed: at, total: this.total });
+            }
             return;
         }
     }

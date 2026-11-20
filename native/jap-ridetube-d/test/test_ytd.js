@@ -550,6 +550,13 @@ async function main() {
         await waitUntil(() => called('setTime').length);
         assert.strictEqual(called('setTime')[0].a.newTimeElapsed, 25000, 'resumed where it was left');
         assert.strictEqual(yt.calls.filter((x) => /sponsor/.test(x.url)).length, 0, 'segments from sb.json');
+        // until the setTime lands the player still says the file's start: not taken as the place (a touch then paused it at 0),
+        // and the app was told where it resumes
+        await c.waitFor((x) => x.ev === 'time' && x.elapsed === 25000, 1000);   // the app is told the resume place at once
+        tick(900); await sleep(50);
+        assert.strictEqual(d.elapsed, 25000, 'the early time is ignored');
+        c.send({ cmd: 'pause' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'paused');
+        assert.strictEqual(d.stoppedAt, 25000, 'paused right after the resume: held there, not at the start');
         c.send({ cmd: 'stop' });
         await c.waitFor((x) => x.ev === 'state' && x.state === 'idle');
         d.opts.resume = false;

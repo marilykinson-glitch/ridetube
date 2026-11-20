@@ -371,7 +371,7 @@ mgu.run({
         let ovUntil = 0, listOpen = false, listTab = 'next';   // listOpen: the Up next panel
         function wake() { ovUntil = Date.now() + OVERLAY_MS; dirty = true; }
         // it stays while there is no moving picture to look at
-        const pinned = () => (scrub && scrub.id === model.id) || model.state !== 'playing' || !videoShown || noVideo() || !!askSeg();
+        const pinned = () => (scrub && scrub.id === model.id) || model.state !== 'playing' || model.buffering || !videoShown || noVideo() || !!askSeg();
         const overlay = () => pinned() || Date.now() < ovUntil || listOpen;
         // a tap beside the controls (no target): hides them
         if (ctx.onTap) ctx.onTap(() => { if (mode === 'player' && !pinned() && overlay()) { ovUntil = 0; dirty = true; } });
@@ -1113,6 +1113,8 @@ mgu.run({
             else if (noVideo()) mid = 'Xe đang chạy — chỉ phát âm thanh';
             else if (!gpu()) mid = 'Cần mgu-render để hiện hình — âm thanh vẫn phát';
             else if (live && !videoShown) mid = 'Đang mở hình ảnh…';
+            // sought past the picture fetched so far: the sound plays on, the picture comes when the download reaches there
+            else if (model.buffering && model.state === 'playing') mid = model.fetched ? 'Hình chưa tải tới đoạn này — đã tải tới ' + clock(model.fetched) + ', tiếng vẫn phát' : 'Đang tải hình cho đoạn này…';
             if (model.state === 'preparing') {
                 const p = Math.max(0, Math.min(100, model.pct || 0));
                 cv.circle(cx, cy, 56, '#00000099');
@@ -1157,6 +1159,7 @@ mgu.run({
                 const x0 = LX + 40, w = SW - x0 - 40, y = SH - 66, el = shownAt(), fx = x0 + Math.round(w * Math.min(1, el / model.total)), bf = focusKey === 'ov:bar';
                 const at = (ms) => x0 + Math.round(w * Math.min(1, ms / model.total)), ex = model.extras && model.extras.id === model.id ? model.extras : null;
                 cv.roundRect(x0, y, w, 6, 3, '#ffffff55');
+                if (model.fetched !== null && model.fetched !== undefined) cv.roundRect(x0, y, Math.max(6, at(model.fetched) - x0), 6, 3, '#ffffffaa');   // the picture fetched so far
                 drawProgress(cv, x0, y, fx - x0, 6);
                 if (ex) ex.chapters.forEach((c) => { if (c[0] > 0) cv.fillRect(at(c[0]) - 2, y, 4, 6, '#000000'); });
                 if (bf) cv.circle(fx, y + 3, 18, '#ffffff');

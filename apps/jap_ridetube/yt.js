@@ -140,6 +140,8 @@ class Model {
             const was = this.state;
             this.state = String(m.state || 'idle');
             if (typeof m.pct === 'number') this.pct = m.pct;
+            this.buffering = m.buffering === true;                                  // the sound is ahead of the picture fetched so far
+            this.fetched = typeof m.fetched === 'number' ? m.fetched : null;       // picture fetched up to there (ms); null: all
             // another video than the one asked (the daemon's own, after an app restart): title and channel from a list;
             // either way the daemon's title wins unless it is only the id (said while preparing)
             if (m.id !== undefined && m.id !== this.id) { const r = this.item(m.id); this.id = m.id; this.title = r ? String(r.title || '') : ''; this.channel = r ? String(r.channel || '') : ''; }
@@ -291,6 +293,7 @@ class Model {
     /** seek by delta ms, clamped into the video */
     skip(delta) {
         if (this.state !== 'playing' && this.state !== 'paused') return false;
+        if (!(this.total > 0)) return false;   // no time from the daemon yet (a video resuming where it was left): +10 s from 0 would start it over
         let ms = this.elapsed + delta;
         if (this.total > 0) ms = Math.min(ms, Math.max(0, this.total - 1000));
         ms = Math.max(0, Math.round(ms));
