@@ -162,7 +162,10 @@ async function clientAndModel() {
     await lastIs(d, { cmd: 'auth' });
     d.send({ ev: 'auth', state: 'code', code: 'ABC-DEF-GHIJ', url: 'https://www.google.com/device', expires: 1800 });
     await until(() => m.auth.code === 'ABC-DEF-GHIJ', 2000, 'code');
-    assert.strictEqual(m.feed('home'), false, 'no feed while signed out');
+    assert.strictEqual(m.feed('subs'), false, 'no account feed while signed out');
+    assert.strictEqual(m.feed('home'), true, 'Home: the general one for nobody signed in');
+    d.send({ ev: 'feed', which: 'home', guest: true, items: [{ id: 'gst00000001', title: 'G' }] });
+    await until(() => m.feeds.home && m.feeds.home.guest === true && m.feeds.home.items.length === 1, 2000, 'guest home');
     d.send({ ev: 'auth', state: 'error', msg: 'timeout' });
     await until(() => m.auth.state === 'error', 2000, 'auth error');
     assert.ok(!m.authStart() && m.authStart(true), 'after an error only a retry asks again');
@@ -584,7 +587,16 @@ async function appFrames() {
     await sleep(100);
     assert.strictEqual(d.cmds('auth').length, 0, 'signed out on the results: no code asked');
     disp.onTab(0);
-    await until(() => d.cmds('auth').length === 1, 2000, 'Home, signed out: a sign-in code asked');
+    // Home, nobody signed in: the general Home is asked (no sign-in code), with a Sign in tile first
+    await until(() => d.cmds('feed').some((x) => x.which === 'home'), 2000, 'Home, signed out: the general Home asked');
+    assert.strictEqual(d.cmds('auth').length, 0, 'and no code until Sign in is asked');
+    d.send({ ev: 'feed', which: 'home', guest: true, items: [{ id: 'gst00000001', title: 'General one', channel: 'G' }] });
+    await sleep(100);
+    await drawn();
+    assert.ok(texts.indexOf('Đăng nhập') >= 0 && texts.indexOf('General one') >= 0, 'the Sign in tile and the general videos: ' + texts.join('|'));
+    const sgn = disp.pageTargets.find((t) => t.key === 'h:0:::signin');
+    if (sgn) sgn.run(); else hu.handlers.BTN_ACCOUNT();
+    await until(() => d.cmds('auth').length === 1, 2000, 'Sign in: a sign-in code asked');
     await drawn();
     assert.ok(texts.indexOf('Đang lấy mã đăng nhập…') >= 0, texts.join('|'));
     d.send({ ev: 'auth', state: 'code', code: 'ABC-DEF-GHIJ', url: 'https://www.google.com/device', expires: 1800 });
@@ -603,8 +615,7 @@ async function appFrames() {
     assert.strictEqual(d.cmds('auth').length, 1, 'another feed tab: the code shown, not asked again');
     d.send({ ev: 'auth', state: 'signed_in' });
     await until(() => disp.headerMark({ textWidth: () => 100 }, 32) > 100, 2000, 'signed in replaces the header name with the Premium mark');
-    await until(() => d.cmds('feed').length === 1, 2000, 'signed in on Subscriptions: its feed asked');
-    assert.deepStrictEqual(d.cmds('feed')[0], { cmd: 'feed', which: 'subs' });
+    await until(() => d.cmds('feed').filter((x) => x.which === 'subs').length === 1, 2000, 'signed in on Subscriptions: its feed asked');
     await drawn();
     assert.ok(texts.indexOf('Đang tải Kênh đăng ký...') >= 0, texts.join('|'));
     // an older daemon: a flat list, no shelves -> a grid of four a row; thumbs asked for the tiles drawn only
@@ -658,8 +669,11 @@ async function appFrames() {
     d.send({ ev: 'auth', state: 'signed_out' });
     await sleep(150);
     assert.strictEqual(d.cmds('auth').length, 2, 'code expired: not asked again until a tap');
+    disp.onTab(1);
+    await until(() => d.cmds('auth').length === 3, 2000, 'opening an account feed tab asks again');
     disp.onTab(0);
-    await until(() => d.cmds('auth').length === 3, 2000, 'opening a feed tab asks again');
+    await sleep(100);
+    assert.strictEqual(d.cmds('auth').length, 3, 'Home: the general one, no code asked');
     console.log('ok   feed tabs (sign-in page with QR and code, feed tiles, sign out)');
 
     // Home with the account's shelves (daemon 0.1.6): the shelves, Watch later (asked with Home)

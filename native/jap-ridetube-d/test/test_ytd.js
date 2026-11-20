@@ -1014,6 +1014,27 @@ async function main() {
         yt.next = keep;
     });
 
+    await t('home with nobody signed in: the general Home (guest); none given -> a shelf per topic from searches', async () => {
+        c.clear(); yt.calls.length = 0;
+        const kb = yt.browse, ks = yt.search;
+        yt.browse = (h) => { assert.ok(!h || !h.Authorization, 'no token sent'); return ok({ contents: { a: [tile('GUEST000001', 'TILE_CONTENT_TYPE_VIDEO', 'General', 'Chan G', '3:00')] } }); };
+        c.send({ cmd: 'feed', which: 'home' });
+        const e = await c.waitFor((x) => x.ev === 'feed' && x.which === 'home');
+        assert.strictEqual(e.guest, true);
+        assert.deepStrictEqual(e.items.map((x) => x.id), ['GUEST000001']);
+        c.clear();
+        yt.browse = () => ({ status: 401, body: '{}' });
+        yt.search = (h, b) => ok({ contents: { a: [tile(('T' + Buffer.from((typeof b === 'string' ? JSON.parse(b) : b).query).toString('hex') + '0000000000').slice(0, 11), 'TILE_CONTENT_TYPE_VIDEO', 'Topic', 'Chan T', '3:00')] } });
+        c.send({ cmd: 'feed', which: 'home' });
+        const e2 = await c.waitFor((x) => x.ev === 'feed' && x.which === 'home');
+        assert.ok(e2.guest && e2.shelves.length >= 3 && e2.shelves[0].title === 'Âm nhạc' && e2.items.length >= 3, JSON.stringify(e2).slice(0, 300));
+        c.clear();
+        c.send({ cmd: 'feed', which: 'subs' });
+        const e3 = await c.waitFor((x) => x.ev === 'feed' && x.which === 'subs');
+        assert.strictEqual(e3.error, 'signed out', 'the other feeds still need the account');
+        yt.browse = kb; yt.search = ks;
+    });
+
     await t('auth_status with no account: signed out', async () => {
         c.clear();
         c.send({ cmd: 'auth_status' });

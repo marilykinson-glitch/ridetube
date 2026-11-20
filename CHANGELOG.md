@@ -1,5 +1,10 @@
 # Changelog
 
+## App 0.3.40, service 0.3.31
+
+- Home with nobody signed in: general videos (YouTube's own Home for no account when it gives one, else a shelf per topic from searches) with a Sign in tile first. The card with the QR code comes only when Sign in is asked (the tile, or Sign in in the menu); Subscriptions, Watch later and Library still show it. The card says the sign-in happens on the phone, on Google's page.
+- Premium in the header: shown with the country (VN); hidden when the service saw ads in the account's player answer. The service looks for the Premium mark in the account's Home (`premium` event; `premium: no mark ...` in the log when it finds none).
+
 ## Service 0.3.30 (app 0.3.39)
 
 - A video that opens black and silent: when the state is playing and the BMW player sends no time for 6 s (the playFile was accepted, nothing plays), the player is started again by itself on a new connection, where it was. Three times in vain: an error with Try again instead of a black screen. Logged as `audio: no time from the player ...`.

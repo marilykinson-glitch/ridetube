@@ -637,6 +637,7 @@ Account.prototype.signOut = function () {
 Account.prototype.drop = function (why) {
     try { fs.unlinkSync(this.opts.accountFile); } catch (e) { /* none */ }
     this.log('account: signed out (' + why + ')');
+    this.premium = false;
     this.emit({ ev: 'auth', state: 'signed_out' });
 };
 // an access token with 5 min left at least: refreshed when not (force: anyway), one refresh at a time
@@ -673,6 +674,37 @@ Account.prototype.refresh = async function (a, out) {
 Account.prototype.browse = function (browseId, token) {
     return this.json('POST', YT + '/youtubei/v1/browse', { context: { client: TV_CLIENT }, browseId: browseId }, { Authorization: 'Bearer ' + token });
 };
+// Home for nobody signed in: YouTube's general Home when it gives one, else a shelf per topic from searches. feed{which:'home', guest:true}
+const GUEST_TOPICS = [['Âm nhạc', 'âm nhạc'], ['Tin tức', 'tin tức hôm nay'], ['Hài', 'hài'], ['Ô tô', 'ô tô'], ['Podcast', 'podcast']];
+Account.prototype.guestHome = async function () {
+    let items = [], shelves = [];
+    try {
+        const r = await this.json('POST', YT + '/youtubei/v1/browse', { context: { client: TV_CLIENT }, browseId: FEEDS.home }, null);
+        if (r.status === 200 && r.j) { items = feedItems(r.j).slice(0, FEED_MAX); shelves = feedShelves(r.j); }
+        else this.log('guest home: browse ' + r.status);
+    } catch (e) { if (e.noUid) throw e; this.log('guest home: ' + e.message); }
+    if (!items.length) {
+        const got = await Promise.all(GUEST_TOPICS.map((t) => this.json('POST', YT + '/youtubei/v1/search', { context: { client: TV_CLIENT }, query: t[1] }, null)
+            .then((r) => ({ title: t[0], items: r.status === 200 && r.j ? feedItems(r.j).slice(0, SHELF_TILES) : [] }), (e) => { if (e.noUid) throw e; return { title: t[0], items: [] }; })));
+        shelves = got.filter((x) => x.items.length);
+        const seen = {};
+        shelves.forEach((x) => x.items.forEach((it) => { if (!seen[it.id]) { seen[it.id] = true; items.push(it); } }));
+        if (!items.length) throw new Error('guest home: nothing from the searches either');
+    }
+    this.emit({ ev: 'feed', which: 'home', guest: true, items: items.slice(0, FEED_MAX), shelves: shelves });
+    return undefined;
+};
+// an enum-like string with PREMIUM in it anywhere in an answer (the Premium logo's type)
+function premiumMark(root) {
+    let hit = false;
+    (function walk(o, d) {
+        if (hit || o === null || o === undefined || d > 40) return;
+        if (typeof o === 'string') { if (/^[A-Z0-9_]*PREMIUM[A-Z0-9_]*$/.test(o)) hit = true; return; }
+        if (typeof o !== 'object') return;
+        Object.keys(o).forEach((k) => walk(o[k], d + 1));
+    })(root, 0);
+    return hit;
+}
 // `feed` {which: home|subs|wl} -> feed{which, items, shelves} or feed{which, error}
 Account.prototype.feed = function (which) {
     which = String(which);
@@ -687,11 +719,16 @@ Account.prototype.feed = function (which) {
 Account.prototype.loadFeed = async function (which) {
     const g = this.gen;
     try {
+        if (which === 'home' && !this.load()) return await this.guestHome();   // nobody signed in: the general Home
         let r = await this.browse(FEEDS[which], await this.token(false));
         if (r.status === 401) r = await this.browse(FEEDS[which], await this.token(true)); // the token died early
         if (g !== this.gen) throw Object.assign(new Error('signed out'), { signedOut: true });
         if (r.status !== 200 || !r.j) throw new Error('browse ' + r.status);
         this.emit({ ev: 'feed', which: which, items: feedItems(r.j).slice(0, FEED_MAX), shelves: feedShelves(r.j) });
+        if (which === 'home') {   // a Premium account's Home carries a PREMIUM mark (its logo type); none found: not known, said in the log once
+            if (premiumMark(r.j)) { this.premium = true; this.emit({ ev: 'premium', value: true }); }
+            else if (!this.premiumLogged) { this.premiumLogged = true; this.log('premium: no mark in the home answer (top: ' + Object.keys(r.j).join(',') + ')'); }
+        }
     } catch (e) {
         if (!e.signedOut) this.log('feed ' + which + ': ' + e.message);
         this.emit({ ev: 'feed', which: which, error: e.signedOut ? 'signed out' : e.noUid ? e.message : 'feed offline' });
@@ -902,6 +939,8 @@ Daemon.prototype.trackStart = async function (c) {
     try {
         const r = await this.account.json('POST', YT + '/youtubei/v1/player', { context: { client: TV_CLIENT }, videoId: c.id },
             { Authorization: 'Bearer ' + await this.account.token(false) });
+        // ads in a signed-in player answer: not a Premium account (unless Home said it is)
+        if (r.j && !this.account.premium && (r.j.adPlacements || r.j.playerAds || r.j.adSlots) && this.premiumSaid !== false) { this.premiumSaid = false; this.emit({ ev: 'premium', value: false }); }
         const pt = (r.j && r.j.playbackTracking) || {};
         const pb = pt.videostatsPlaybackUrl && pt.videostatsPlaybackUrl.baseUrl, wt = pt.videostatsWatchtimeUrl && pt.videostatsWatchtimeUrl.baseUrl;
         if (!/^https:\/\/s\.youtube\.com\//.test(pb) || !/^https:\/\/s\.youtube\.com\//.test(wt) || this.cur !== c) return;

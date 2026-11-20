@@ -98,16 +98,21 @@ mgu.run({
         // A new device flow starts only from here (show), the account button or the page's "tap" - never on its own
         const openFeed = () => {
             if (!isFeed(mode) && mode !== 'lib') return;
-            if (model.auth.state !== 'signed_in') { model.authStart(); return; }
+            if (model.auth.state !== 'signed_in') {
+                if (mode === 'home' && !signInOpen) model.feed('home'); else model.authStart();   // Home: the general one, until Sign in is asked
+                return;
+            }
             if (mode === 'lib') { model.loadPlaylists(); return; }
             model.feed(mode);
             if (mode === 'home') model.feed('wl');
             if (mode === 'subs') model.loadChannels();                    // Home's last shelf (one request at a time: idempotent)
         };
+        let signInOpen = false;                          // Home, nobody signed in: the sign-in card instead of the general Home (asked by its Sign in tile)
         const backKey = {};                              // page -> the tile the controller was on when it was left
         function show(m) {
             if (m !== mode) { dirty = true; if (laid.mode === mode && laid.where[focusKey]) backKey[mode] = focusKey; }   // (a tile of this page)
             mode = m;
+            signInOpen = false;
             if (m !== 'player') { browse = m; listOpen = false; } else wake();
             openFeed(); sync(); labels();
         }
@@ -122,7 +127,11 @@ mgu.run({
             if (m.ev === 'error') log.warn('jap-ridetube-d: ' + m.msg);
             if (m.ev === 'state') log.info('jap-ridetube-d: ' + m.state + (m.id ? ' ' + m.id : ''));
             if (m.ev === 'related') topUpQueue();
-            if (m.ev === 'auth') { log.info('jap-ridetube-d: account ' + m.state); if (m.state === 'signed_in') openFeed(); }
+            if (m.ev === 'auth') {
+                log.info('jap-ridetube-d: account ' + m.state);
+                if (m.state === 'signed_in') { signInOpen = false; openFeed(); }
+                else if (mode === 'home' && !signInOpen) model.feed('home');   // (the model dropped the feeds: the general Home again)
+            }
             changed();
         });
         ctl.connect();
@@ -172,7 +181,7 @@ mgu.run({
         let signOutArmed = null;
         const accountLabel = () => model.auth.state !== 'signed_in' ? 'Đăng nhập' : signOutArmed ? 'Nhấn lần nữa để đăng xuất' : 'Đăng xuất';
         const account = () => {
-            if (model.auth.state !== 'signed_in') { show('home'); model.authStart(true); ui.open('VIEW'); return; }
+            if (model.auth.state !== 'signed_in') { show('home'); signInOpen = true; model.authStart(true); ui.open('VIEW'); return; }
             if (!signOutArmed) { signOutArmed = setTimeout(() => { signOutArmed = null; labels(); }, 5000); labels(); return; }
             clearTimeout(signOutArmed); signOutArmed = null;
             model.signOut();
@@ -471,11 +480,14 @@ mgu.run({
             const w = size * 1.5, gap = size * 0.19;
             if (x !== undefined) {
                 logo(cv, x + w / 2, y - size * 0.34, w);
-                cv.text('Premium', x + w + gap, y, size, color, premiumOptions);
+                const pw = cv.text('Premium', x + w + gap, y, size, color, premiumOptions);
+                cv.text(REGION, x + w + gap + pw + size * 0.12, y - size * 0.4, rs(size), '#aaaaaa', LIT);   // the country, small and raised
             }
-            return w + gap + cv.textWidth('Premium', size, premiumOptions);
+            return w + gap + cv.textWidth('Premium', size, premiumOptions) + size * 0.12 + cv.textWidth(REGION, rs(size), LIT);
         }
-        const premiumActive = () => model.auth.state === 'signed_in';
+        // Premium: when the service found the account's Premium mark; not when it saw ads; not known (an older service, no mark): as before
+        const REGION = 'VN', rs = (size) => Math.max(14, Math.round(size * 0.55));
+        const premiumActive = () => model.auth.state === 'signed_in' && model.premium !== false;
         if (ctx.display) ctx.display.headerMark = (cv, size, x, y, color) =>
             premiumActive() ? premium(cv, size, x, y, color) : 0;
 
@@ -790,11 +802,13 @@ mgu.run({
             const sub = !l || (l.loading && !l.items.length) ? 'Đang tải danh sách phát…' : l.error ? VI.error(l.error === 'feed offline' ? 'feed offline' : l.error) : (l.items.length ? l.items.length + ' danh sách phát' : 'Chưa có danh sách phát');
             drawPage(cv, [{ title: 'Thư viện', sub, items, chan: true }]);
         }
+        const PERSON = (cv, cx, cy, c) => { cv.circle(cx, cy - 18, 16, c); cv.roundRect(cx - 30, cy + 6, 60, 30, 15, c); };   // a head and shoulders
         function drawFeed(cv, which) {
             const f = model.feeds[which], a = model.auth.state;
             if (!model.connected) return say(cv, OFF, OFF2);
             if (a === 'unsupported') return say(cv, 'Cập nhật dịch vụ jap-ridetube-d để đăng nhập');
-            if (a !== 'signed_in') return drawSignIn(cv);
+            const guest = a !== 'signed_in' && which === 'home' && !signInOpen && !(f && f.error);   // (an error: an older service, or offline - the card as before)
+            if (a !== 'signed_in' && !guest) return drawSignIn(cv);
             const chans = which === 'subs' && model.chans && model.chans.items.length;   // the channels show without the videos
             if ((!f || !f.items.length) && !chans) {
                 return say(cv, !f || f.loading ? 'Đang tải ' + NAMES[which] + '...' : f.error === 'feed offline' ? 'Không kết nối được dịch vụ video — kiểm tra Internet trên xe'
@@ -807,6 +821,10 @@ mgu.run({
                     .concat(f.shelves || [{ title: 'Đề xuất', items: f.items, grid: true }])
                     .concat(wl && wl.items.length ? [{ title: 'Xem sau', items: wl.items.slice(0, SHELF_MAX) }] : []);
             } else secs = !f ? [] : f.shelves && which !== 'wl' ? f.shelves : [{ title: NAMES[which], sub: f.items.length + ' video', items: f.items, grid: true }];
+            if (guest) {   // the Sign in tile first: the card with the QR code comes only when asked
+                const tile = { id: '::signin', title: 'Đăng nhập', sub: 'Kênh đăng ký, Xem sau, đề xuất riêng', act: () => { signInOpen = true; model.authStart(true); dirty = true; }, glyph: PERSON };
+                secs = secs.filter((sc) => sc.title !== 'Xem sau').map((sc, i) => (i === 0 ? Object.assign({}, sc, { title: sc.title === 'Đề xuất' ? 'Đề xuất chung' : sc.title, sub: 'Chưa đăng nhập', items: [tile].concat(sc.items) }) : sc));
+            }
             if (which === 'subs') secs = chanSections().concat(chanQ || !f || !f.items.length ? [] : secs);
             drawPage(cv, secs.map((sc) => (sc.chan ? sc : Object.assign({}, sc, { items: shown(sc.items) }))).filter((sc) => sc.chan || sc.items.length));
         }
@@ -838,7 +856,7 @@ mgu.run({
             cv.roundRect(tx, 238 + dy, cwid + 56, 96, 16, C.bg);
             cv.text(a.code, tx + 28, 308 + dy, 54, '#ffffff', code);
             cv.text(hint, tx, 392 + dy, 26, C.dim, LIT);
-            cv.text('Tài khoản được lưu trên xe; ứng dụng không nhận mật khẩu', tx, 440 + dy, 20, '#717171', LIT);
+            cv.text('Đăng nhập trên điện thoại, ở trang của Google — ứng dụng không nhận mật khẩu', tx, 440 + dy, 20, '#717171', LIT);
         }
         function drawPlayer(cv) {
             cv.fillRect(0, TOP, W, H - TOP, '#000000');

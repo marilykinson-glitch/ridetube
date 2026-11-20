@@ -152,6 +152,8 @@ class Model {
             if (this.state === 'playing' && was !== 'playing' && was !== 'paused') { this.videoOn = null; this._video(); }
         } else if (m.ev === 'auth') {
             this.auth = { state: String(m.state || 'signed_out'), code: m.code ? String(m.code) : null, url: typeof m.url === 'string' ? m.url : null, msg: m.msg ? String(m.msg) : null };
+            if (this.auth.state !== 'signed_in') this.premium = undefined;
+            else if (this.feeds.home && (this.feeds.home.guest || this.feeds.home.loading)) delete this.feeds.home;   // the general Home (shown or on its way): the account's own is asked instead
             if (this.auth.state !== 'signed_in') { this.feeds = {}; this.chans = null; this.lists = null; this.chan = null; this._prune(); }   // signed out: nobody's feed left on screen
         } else if (m.ev === 'channels') {
             if (!this.chans) return;
@@ -188,6 +190,8 @@ class Model {
             if (FEEDS.indexOf(m.which) < 0) return;
             const f = this.feeds[m.which] = this.feeds[m.which] || { items: [] };
             f.loading = false;
+            if (m.guest && this.auth.state === 'signed_in') { this.feed(m.which); return; }   // the general Home, answered after the sign-in: the account's own instead
+            f.guest = !!m.guest;
             if (m.error) f.error = String(m.error); else {
                 f.error = null; f.items = valid(m.items, FEED_MAX);
                 // shelves: none (an older daemon, or a playlist) = the flat list as a grid
@@ -196,6 +200,8 @@ class Model {
                 if (!f.shelves.length) f.shelves = null;
                 this._prune();
             }
+        } else if (m.ev === 'premium') {
+            this.premium = m.value === true ? true : m.value === false ? false : undefined;
         } else if (m.ev === 'positions') {
             this.pos = {};
             valid(m.items, 300).forEach((r) => { if (r.total > 0) this.pos[r.id] = r; });
@@ -305,7 +311,7 @@ class Model {
     feed(which) {
         if (FEEDS.indexOf(which) < 0) return false;
         const f = this.feeds[which] = this.feeds[which] || { items: [] };
-        if (f.loading || this.auth.state !== 'signed_in') return false;
+        if (f.loading || (this.auth.state !== 'signed_in' && which !== 'home')) return false;   // (Home: the general one for nobody signed in)
         f.loading = true; f.error = null; f.t = Date.now();
         this._changed();
         if (this.send({ cmd: 'feed', which })) return true;
