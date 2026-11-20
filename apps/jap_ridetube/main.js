@@ -829,6 +829,7 @@ mgu.run({
             drawPage(cv, secs.map((sc) => (sc.chan ? sc : Object.assign({}, sc, { items: shown(sc.items) }))).filter((sc) => sc.chan || sc.items.length));
         }
         // not signed in: a QR code for the sign-in page, the code to enter there in big letters, on a card
+        const NOTE = 'Đăng nhập trên trang của Google — ứng dụng không nhận mật khẩu';
         function drawSignIn(cv) {
             const a = model.auth;
             // a code expired or refused, or signed out: a new one only when asked (a tap, or Sign in in the menu)
@@ -843,7 +844,7 @@ mgu.run({
             let url = /^https:\/\//.test(a.url || '') ? a.url : SIGNIN_URL, q;
             try { q = QR.encode(url); } catch (e) { url = SIGNIN_URL; q = QR.encode(url); }   // longer than a version 4 code holds
             const code = { literal: true, font: 'bold', spacing: 6 }, cwid = cv.textWidth(a.code, 54, code), hint = 'Quét mã hoặc truy cập ' + url.replace(/^https:\/\/(www\.)?/, '');
-            const side = (q.length + 8) * 8, textW = Math.max(cwid + 56, cv.textWidth(hint, 26, LIT), 88 + cv.textWidth('Đăng nhập', 44, LITB), 560);
+            const side = (q.length + 8) * 8, textW = Math.max(cwid + 56, cv.textWidth(hint, 26, LIT), cv.textWidth(NOTE, 20, LIT), 88 + cv.textWidth('Đăng nhập', 44, LITB), 560);
             const cw = Math.min(1400, 44 + side + 80 + textW + 64), ch = 444, cx = Math.round(MID - cw / 2), cy = TOP + Math.max(14, Math.round((H + (cv.own ? cv.extra : 0) - TOP - ch) / 2)), dy = cy - 58;
             cv.roundRect(cx, cy, cw, ch, 24, C.card);
             const qx = cx + 44, qy = cy + Math.round((ch - side) / 2);
@@ -856,7 +857,7 @@ mgu.run({
             cv.roundRect(tx, 238 + dy, cwid + 56, 96, 16, C.bg);
             cv.text(a.code, tx + 28, 308 + dy, 54, '#ffffff', code);
             cv.text(hint, tx, 392 + dy, 26, C.dim, LIT);
-            cv.text('Đăng nhập trên điện thoại, ở trang của Google — ứng dụng không nhận mật khẩu', tx, 440 + dy, 20, '#717171', LIT);
+            cv.text(fit(cv, NOTE, 20, cx + cw - 40 - tx, LIT), tx, 440 + dy, 20, '#9a9a9a', LIT);
         }
         function drawPlayer(cv) {
             cv.fillRect(0, TOP, W, H - TOP, '#000000');

@@ -1,5 +1,9 @@
 # Changelog
 
+## App 0.3.43, service 0.3.33
+
+- Sign-in card: its last line no longer runs past the card's right edge (shorter, and the card is as wide as it).
+
 ## App 0.3.42, service 0.3.33
 
 - A video resumed where it was left no longer starts over on a touch: until the player's setTime lands, its times (the file's start) are not taken as the place, the app is told the resume place at once, and +10 s / -10 s wait for it. A setTime the player dropped is sent once more.
