@@ -478,31 +478,11 @@ async function appFrames() {
         await hu.loopFn();
         assert.ok(disp.pageTargets.some((t) => t.key === 'ov:q'), 'closed again');
         console.log('ok   Up next panel opens and closes from the overlay');
-        // driving: podcast mode - no picture, the big controls always there (no overlay to wake)
-        speedH({ speedVehicleCentreOfGravity: 50 * 64 });
-        const seeks = d.cmds('seek').length;
-        await sleep(300); await hu.loopFn();                 // (an unchanged model redraws within 250 ms)
-        assert.ok(!frame().vrect, 'no video while driving');
-        // Video while driving on (a car coded for video in motion): switched on while moving, it waits for a stop;
-        // switched on while parked, the picture stays while moving
-        hu.ctx.settings.set('video_driving', true);
-        await sleep(300); await hu.loopFn();
-        assert.ok(!frame().vrect, 'Video while driving switched on while moving: no picture until parked');
-        speedH({ speedVehicleCentreOfGravity: 0 });
-        await sleep(300); await hu.loopFn();
+        // driving: the picture stays (no setting, no drive lock)
         speedH({ speedVehicleCentreOfGravity: 50 * 64 });
         await sleep(300); await hu.loopFn();
-        assert.ok(frame().vrect, 'Video while driving: video while moving');
-        assert.deepStrictEqual(d.cmds('video').slice(-1)[0], { cmd: 'video', on: true }, 'Video while driving: video on');
-        hu.ctx.settings.set('video_driving', false);
-        await sleep(300); await hu.loopFn();
-        assert.ok(!frame().vrect, 'setting off: no video while driving again');
-        console.log('ok   Video while driving setting keeps the picture while moving');
-        ['ov:rw', 'ov:play', 'ov:ff'].forEach((k) => assert.ok(disp.pageTargets.some((t) => t.key === k && t.w > 120 && t.w < 300), 'podcast control ' + k + ': ' + keys()));
-        disp.pageTargets.find((t) => t.key === 'ov:ff').run();
-        await until(() => d.cmds('seek').length > seeks, 2000, 'a podcast +10 s');
-        assert.ok(disp.pageTargets.some((t) => t.key === 'ov:bar' && t.turn), 'podcast: the knob seeks on the bar');
-        // a failed play while driving: Try again in the middle (the same video)
+        assert.ok(frame().vrect, 'video while the car moves');
+        // a failed play: Try again in the middle (the same video)
         d.send({ ev: 'state', state: 'error', id: 'aaa', title: 'Song' }); d.send({ ev: 'error', msg: 'fetch: boom' });
         await sleep(300); await hu.loopFn();
         const nPlay = d.cmds('play').length;
@@ -514,7 +494,7 @@ async function appFrames() {
         d.send({ ev: 'state', state: 'playing', id: 'aaa', title: 'Song' }); d.send({ ev: 'time', elapsed: 21000, total: 200000 });
         speedH({ speedVehicleCentreOfGravity: 0 });
         await sleep(300); await hu.loopFn();
-        console.log('ok   podcast mode while driving: no picture, big controls, knob seek, Try again');
+        console.log('ok   driving keeps the picture; Try again');
     } else console.log('skip full-screen player (the stub has no full-screen placement)');
     // back to the list (the overlay's back, or the bar's list button where the HMI runs the screen): DROP_VIDEO
     if (own) disp.pageTargets.find((t) => t.key === 'ov:back').run(); else hu.handlers.BTN_LIST();

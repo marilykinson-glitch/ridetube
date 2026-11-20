@@ -79,14 +79,9 @@ mgu.run({
         const theme = () => Object.assign({}, displayTheme(), { sel: '#d9d9d9', selText: '#ffffff' });
         if (ctx.display) ctx.display.theme = theme;
         const parked = Parked.watch(ctx, log, { strict: true });
-        // the drive lock: Video while driving counts only once switched on while parked, so a press while moving
-        // cannot bring the picture up; switching it off works at once
-        let videoDrivingOk = settings.get('video_driving') === true;   // (on already when the app starts: it was switched on parked; only a switch-on while moving waits for a stop)
-        const noVideo = () => {
-            const on = settings.get('video_driving') === true, moving = parked.moving();
-            videoDrivingOk = moving ? videoDrivingOk && on : on;
-            return moving && !videoDrivingOk;
-        };
+        // the picture shows while the car moves too (asked 2026-11-20: no setting, no coding of the unit); the audio-only
+        // (podcast) screens below stay, unused, behind this
+        const noVideo = () => false;
 
         /* ---------- the daemon ---------- */
         const ctl = new Ctl(process.env.MGU_YT_SOCKET || SOCKET, log);
@@ -541,7 +536,7 @@ mgu.run({
             const pid = th && cv.place ? slot(r.id, th) : null;
             if (pid) cv.picture(pid, x, y, TW, TH, 12);
             else { cv.roundRect(x, y, TW, TH, 12, C.ph); cv.circle(x + TW / 2, y + TH / 2, 30, '#ffffff10'); tri(cv, x + TW / 2 + 2, y + TH / 2, 24, '#ffffff38'); }
-            const p = model.pos[r.id];   // watched (here, else on the account): a bar along the thumbnail's foot
+            const p = model.auth.state === 'signed_in' ? model.pos[r.id] : null;   // watched (here, else on the account): a bar along the thumbnail's foot
             const frac = p ? (p.done ? 1 : Math.min(1, p.ms / p.total)) : r.watched_pct > 0 ? r.watched_pct / 100 : 0;
             if (frac > 0) {
                 const pw = Math.max(8, Math.round(TW * frac));
@@ -807,7 +802,7 @@ mgu.run({
             const f = model.feeds[which], a = model.auth.state;
             if (!model.connected) return say(cv, OFF, OFF2);
             if (a === 'unsupported') return say(cv, 'Cập nhật dịch vụ jap-ridetube-d để đăng nhập');
-            const guest = a !== 'signed_in' && which === 'home' && !signInOpen && !(f && f.error);   // (an error: an older service, or offline - the card as before)
+            const guest = a !== 'signed_in' && which === 'home' && !signInOpen && !(f && f.error === 'signed out');   // ('signed out': an older service - the card as before; offline: said below, not a sign-in card)
             if (a !== 'signed_in' && !guest) return drawSignIn(cv);
             const chans = which === 'subs' && model.chans && model.chans.items.length;   // the channels show without the videos
             if ((!f || !f.items.length) && !chans) {
@@ -817,7 +812,7 @@ mgu.run({
             let secs;
             if (which === 'home') {
                 const wl = model.feeds.wl;
-                secs = (model.resume.length ? [{ title: 'Xem tiếp', items: model.resume }] : [])
+                secs = (model.resume.length && a === 'signed_in' ? [{ title: 'Xem tiếp', items: model.resume }] : [])   // (nobody signed in: the last account's watching is not shown)
                     .concat(f.shelves || [{ title: 'Đề xuất', items: f.items, grid: true }])
                     .concat(wl && wl.items.length ? [{ title: 'Xem sau', items: wl.items.slice(0, SHELF_MAX) }] : []);
             } else secs = !f ? [] : f.shelves && which !== 'wl' ? f.shelves : [{ title: NAMES[which], sub: f.items.length + ' video', items: f.items, grid: true }];

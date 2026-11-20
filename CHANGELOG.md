@@ -1,5 +1,11 @@
 # Changelog
 
+## App 0.3.44, service 0.3.33
+
+- The picture shows while the car moves; the "Video while driving" setting is gone (no setting, no coding of the unit needed).
+- Home with nobody signed in: no "Xem tiếp" shelf and no watched bars on the tiles (the last account's watching stays out of sight).
+- Home with nobody signed in and no network: the connection error is said, not the sign-in card.
+
 ## App 0.3.43, service 0.3.33
 
 - Sign-in card: its last line no longer runs past the card's right edge (shorter, and the card is as wide as it).
