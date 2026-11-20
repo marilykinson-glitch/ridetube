@@ -74,7 +74,7 @@ function monoMs() {
 }
 // the app's Video quality: 360 | 480 | 720, else auto: 720 on Wi-Fi (the uplink's wlan*) or no uplink known, 480 on phone data
 function qualityHeight(q, lease) {
-    if ([360, 480, 720].indexOf(Number(q)) >= 0) return Number(q);
+    if ([360, 480, 720, 1080].indexOf(Number(q)) >= 0) return Number(q);
     return lease && lease.interface && !/^wlan/.test(String(lease.interface)) ? 480 : 720;
 }
 // members-only (or members-first) videos: a badge somewhere in the tile, its shape unknown (no capture) - matched on the text
@@ -1682,7 +1682,8 @@ Daemon.prototype.seek = async function (ms) {
     this.elapsed = ms;
     this.lastProgress = Date.now();
     this.lastTickAt = Date.now();
-    this.settle = null; // a seek back right after the switch: its times are ours
+    // the player's times until the setTime lands are the old place's: not taken (they would set the app and ytdec back there)
+    this.settle = { ms: ms, until: Date.now() + 3000, at: Date.now(), both: true };
     this.toYtdec('seek ' + ms);
     // shortcut: once waiting, a seek back into the head still waits for audio.m4a (a few s), simpler than replaying the head
     if (this.headWait) return this.checkBuffering();
@@ -1728,7 +1729,7 @@ Daemon.prototype.onTime = function (v) {
     if (v.elapsed > (this.rawFrom || 0) + 10000) { this.rawFrom = v.elapsed; this.audioTries = 0; }   // it has played on for 10 s: its past stalls are over
     if (this.tickWaiter) { this.tickWaiter(); return; } // resume(): the restarted file plays, its setTime can follow
     if (this.switching || this.headWait) return; // the restart's times, or a paused player
-    if (this.settle && v.elapsed < this.settle.ms - 2000) {
+    if (this.settle && (v.elapsed < this.settle.ms - 2000 || (this.settle.both && v.elapsed > this.settle.ms + (Date.now() - this.settle.at) + 2500))) {
         if (Date.now() < this.settle.until) return; // before our setTime landed
         // it never landed (the player dropped the setTime): once more, rather than playing on from where the file started
         if (!this.settle.again) {
@@ -1961,7 +1962,7 @@ Daemon.prototype.watchdog = function () {
     if (this.headWait || this.elapsed + 1000 > this.fetchedMs) { this.lastProgress = Date.now(); return; }
     // decoding, the sound running, yet no frame shown for 4 s (a black or frozen picture): what a seek by hand cures
     // is done here - ytdec seeks to the clock (the sound is not touched); twice in vain, ytdec is started again
-    const stuck = this.opts.pictureMs || 4000;
+    const stuck = this.opts.pictureMs || 2500;
     if (this.seenShown && !this.switching && !this.paused && Date.now() - this.lastShownAt > stuck && Date.now() - this.lastTickAt < 1500) {
         const at = this.elapsed + (Date.now() - this.lastTickAt);
         this.lastShownAt = Date.now();

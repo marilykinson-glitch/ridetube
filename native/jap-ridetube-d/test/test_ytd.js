@@ -417,6 +417,24 @@ async function main() {
         c.send({ cmd: 'stop' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'idle'); c.clear();
     });
 
+    await t('seek: the player\'s times from the old place (before the setTime lands) are not taken, either way', async () => {
+        fs.writeFileSync(ytlog, ''); setMode('ok');
+        await playing();
+        tick(30000); await sleep(50);
+        c.send({ cmd: 'seek', ms: 10000 }); await waitUntil(() => called('setTime').some((x) => x.a.newTimeElapsed === 10000));
+        tick(30400); await sleep(50);
+        assert.strictEqual(d.elapsed, 10000, 'a seek back: the old, later time is ignored');
+        tick(10300); await sleep(50);
+        assert.strictEqual(d.elapsed, 10300, 'landed');
+        c.send({ cmd: 'seek', ms: 40000 }); await waitUntil(() => called('setTime').some((x) => x.a.newTimeElapsed === 40000));
+        tick(10700); await sleep(50);
+        assert.strictEqual(d.elapsed, 40000, 'a seek ahead: the old, earlier time is ignored');
+        tick(40200); await sleep(50);
+        assert.strictEqual(d.elapsed, 40200);
+        assert.ok(!ytdecLines().some((l) => / in clock (30400|10700) /.test(l)), 'ytdec is not set back to the old place');
+        c.send({ cmd: 'stop' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'idle'); c.clear();
+    });
+
     await t('picture: decoding but no frame shown -> ytdec is sought to the clock (no audio call); shown again -> left alone', async () => {
         await sleep(500); fs.writeFileSync(ytlog, ''); setMode('noshow');
         await playing();
@@ -538,6 +556,7 @@ async function main() {
         tick(15000);                                                 // back into it: played
         await sleep(100);
         assert.strictEqual(c.evs.filter((x) => x.ev === 'skipped').length, 1);
+        d.settle = null;   // (the skip's setTime has landed)
         tick(25000);
         c.send({ cmd: 'stop' });
         const pos = await c.waitFor((x) => x.ev === 'positions');
@@ -1398,7 +1417,7 @@ async function main() {
         const items = feedItems({ a: [tile('MMMMMMMMMM1', 'TILE_CONTENT_TYPE_VIDEO', 'Perk', 'Chan', '9:00', [mb]), tile('MMMMMMMMMM2', 'TILE_CONTENT_TYPE_VIDEO', 'Free', 'Chan', '9:00')] });
         assert.deepStrictEqual(items.map((x) => !!x.members), [true, false]);
         const { qualityHeight } = require('../ytd.js');
-        assert.deepStrictEqual([qualityHeight('360'), qualityHeight(480), qualityHeight('720'), qualityHeight('1080', null)], [360, 480, 720, 720]);
+        assert.deepStrictEqual([qualityHeight('360'), qualityHeight(480), qualityHeight('720'), qualityHeight('1080', null), qualityHeight('1440', null)], [360, 480, 720, 1080, 720]);
         assert.strictEqual(qualityHeight('auto', { interface: 'wlan0' }), 720);
         assert.strictEqual(qualityHeight('auto', { interface: 'usb0' }), 480);
         assert.strictEqual(qualityHeight(undefined, null), 720, 'no uplink known: as before');

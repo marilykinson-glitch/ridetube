@@ -215,7 +215,7 @@ mgu.run({
             model.fill(fillEnabled());
             dirty = true;
         });
-        const QUALITIES = ['auto', '720', '480', '360'];   // app.json's Video quality values, in the button's order
+        const QUALITIES = ['auto', '720', '480', '360', '1080'];   // app.json's Video quality values, in the button's order
         let queue = [], nextAt = 0;
         const played = [];                                // the videos played in this run, newest last (related ones that were played are skipped)
         // the list ran out: YouTube's own "up next" for the playing video carries on (the daemon's `related`)

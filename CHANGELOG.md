@@ -1,5 +1,11 @@
 # Changelog
 
+## App 0.3.46, service 0.3.35
+
+- Video quality: a 1080p choice (experimental: H.264 1080p, shown at the screen's 720 lines; slower to open, may stutter). Auto is unchanged.
+- After a seek, the player's times from the old place (until its setTime lands) are no longer taken, forward or back: the clock on screen and the picture are not set back there for a moment.
+- The picture watchdog acts after 2.5 s without a frame shown (was 4 s).
+
 ## Service 0.3.34 (app 0.3.45)
 
 - Premium is also told from the player answers when Home carries no mark: three plays in a row without ads = Premium, ads in one = not. Kept with the account, so the next start shows it at once (`premium: ...` in the log).
