@@ -1,5 +1,9 @@
 # Changelog
 
+## App 0.3.45, service 0.3.33
+
+- The audio-only (podcast) player screen, unused since 0.3.44, is removed from the code.
+
 ## App 0.3.44, service 0.3.33
 
 - The picture shows while the car moves; the "Video while driving" setting is gone (no setting, no coding of the unit needed).

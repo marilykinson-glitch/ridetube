@@ -31,9 +31,8 @@
  *   MAIN  HMI menu (Search): the HMI's speller, Now playing, Results, Home, Subscriptions, Watch later, recent
  *         searches / suggestions, then Sign in / Sign out (pressed twice).
  *
- * Video only while parked (kit parked.js), unless the "Video while driving" setting is on (for a car coded
- * for video in motion): driving off turns the picture off (daemon `video off`,
- * renderer DROP_VIDEO), the sound plays on; parked again, it comes back. The app stays ACTIVE
+ * The picture shows while the car moves too (no drive lock). Off the player page the picture is off (daemon
+ * `video off`, renderer DROP_VIDEO) and the sound plays on. The app stays ACTIVE
  * while hidden as long as sound plays (ctx.background), because closing the socket stops playback.
  * Never exits: every handler logs its errors.
  */
@@ -79,9 +78,7 @@ mgu.run({
         const theme = () => Object.assign({}, displayTheme(), { sel: '#d9d9d9', selText: '#ffffff' });
         if (ctx.display) ctx.display.theme = theme;
         const parked = Parked.watch(ctx, log, { strict: true });
-        // the picture shows while the car moves too (asked 2026-11-20: no setting, no coding of the unit); the audio-only
-        // (podcast) screens below stay, unused, behind this
-        const noVideo = () => false;
+        // (the picture shows while the car moves too: no drive lock, no setting - asked 2026-11-20)
 
         /* ---------- the daemon ---------- */
         const ctl = new Ctl(process.env.MGU_YT_SOCKET || SOCKET, log);
@@ -366,7 +363,7 @@ mgu.run({
         let ovUntil = 0, listOpen = false, listTab = 'next';   // listOpen: the Up next panel
         function wake() { ovUntil = Date.now() + OVERLAY_MS; dirty = true; }
         // it stays while there is no moving picture to look at
-        const pinned = () => (scrub && scrub.id === model.id) || model.state !== 'playing' || model.buffering || !videoShown || noVideo() || !!askSeg();
+        const pinned = () => (scrub && scrub.id === model.id) || model.state !== 'playing' || model.buffering || !videoShown || !!askSeg();
         const overlay = () => pinned() || Date.now() < ovUntil || listOpen;
         // a tap beside the controls (no target): hides them
         if (ctx.onTap) ctx.onTap(() => { if (mode === 'player' && !pinned() && overlay()) { ovUntil = 0; dirty = true; } });
@@ -383,7 +380,7 @@ mgu.run({
         const gpu = () => (ctx.display && ctx.display.gpu && ctx.display.gpu.native ? ctx.display.gpu : null);
         function sync() {
             const shown = ui.isVisible('VIEW') && (!ui.hasFocus || ui.hasFocus('VIEW'));
-            const want = mode === 'player' && shown && !noVideo();
+            const want = mode === 'player' && shown;
             model.setWantVideo(want);
             // the file ytdec writes; a new one (ytdec restarted) is named to the renderer again
             let cur = null;
@@ -877,7 +874,6 @@ mgu.run({
                 cv.text(prepText(), cx, cy + 82, 26, '#dddddd', { literal: true, align: 'center' });
             } else if (model.state === 'error') mid = 'Lỗi: ' + (VI.error(model.error) || 'đã dừng phát');
             else if (!model.active()) mid = model.state === 'ended' ? 'Đã phát xong' : 'Chọn video trong Trang chủ hoặc Tìm kiếm';
-            else if (noVideo()) mid = 'Xe đang chạy — chỉ phát âm thanh';
             else if (!cv.place || !gpu()) mid = 'Cần mgu-render để hiện hình — âm thanh vẫn phát';
             else if (!videoShown) mid = 'Đang mở hình ảnh…';
             if (model.state === 'paused' && !mid) { cv.circle(cx, cy, 60, '#000000a0'); cv.arc(cx, cy, 57, 60, 0, 360, '#ffffff50'); tri(cv, cx + 5, cy, 46, '#ffffff'); }
@@ -903,87 +899,6 @@ mgu.run({
          * controller stays on its key, so a turn or a press wakes it; a tap anywhere too).
          */
         const OVK = ['ov:back', 'ov:list', 'ov:rw', 'ov:play', 'ov:ff', 'ov:q', 'ov:zoom', 'ov:bar'];
-        // podcast mode (driving): artwork, title, chapter, the bar with chapter ticks and skipped segments, controls
-        // a glove can hit (-10 s, play/pause, +10 s, next in the row), the next video, a skipped-sponsor notice
-        function drawPodcast(cv, SW, SH, LX, tg, run, live, progressTarget) {
-            cv.fillRect(0, 0, SW, SH, C.bg);
-            const x0 = LX + 46, top = 40, ch = model.channel || (model.item(model.id) || {}).channel;
-            const titleW = premiumActive() ? premium(cv, 34, x0, top + 30, '#ffffff')
-                : cv.text('YouTube TV', x0, top + 30, 34, '#ffffff', LITB);
-            const chipX = x0 + titleW + 24;
-            const chip = 'Chỉ âm thanh · xe đang chạy', cw = cv.textWidth(chip, 22, LIT) + 40;
-            cv.roundRect(chipX, top, cw, 40, 20, C.ph);
-            cv.text(chip, chipX + cw / 2, top + 28, 22, C.dim, { literal: true, align: 'center' });
-            cv.text('Hình ảnh trở lại khi xe dừng', SW - 60, top + 28, 22, '#717171', { literal: true, align: 'right' });
-            // laid out from the bottom: the notice / up-next row, the controls, the bar; the artwork takes what is left
-            const cy = SH - 178, by = cy - 128, ay = top + 72, ah = Math.max(120, by - 56 - ay), aw = Math.round(ah * 16 / 9), ax = x0;
-            const th = model.thumbs[model.id];
-            if (!th) model.wantThumb(model.id);
-            const pid = th && cv.place ? slot(model.id, th) : null;
-            if (pid) cv.picture(pid, ax, ay, aw, ah, 24); else { cv.roundRect(ax, ay, aw, ah, 24, C.ph); tri(cv, ax + aw / 2 + 4, ay + ah / 2, 50, '#ffffff38'); }
-            // title block
-            const tx = ax + aw + 70, tw = SW - tx - 60;
-            if (ch) cv.text(fit(cv, ch, 28, tw, LIT), tx, ay + 30, 28, C.dim, LIT);
-            const words = String(model.title || model.id || '').split(/\s+/).filter(Boolean);
-            let l1 = '', i = 0;
-            for (; i < words.length; i++) { const t = l1 ? l1 + ' ' + words[i] : words[i]; if (l1 && cv.textWidth(t, 44, LITB) > tw) break; l1 = t; }
-            [fit(cv, l1, 44, tw, LITB), fit(cv, words.slice(i).join(' '), 44, tw, LITB)].filter(Boolean).forEach((l, k) => cv.text(l, tx, ay + 84 + k * 52, 44, '#ffffff', LITB));
-            const chap = model.chapter();
-            if (chap) cv.text(fit(cv, chap, 28, tw, LIT), tx, ay + ah - 6, 28, '#3ea6ff', LIT);
-            // the bar
-            const bw = SW - x0 - 60, tot = model.total, ex = model.extras && model.extras.id === model.id ? model.extras : null;
-            const at = (ms) => x0 + Math.round(bw * Math.min(1, tot ? ms / tot : 0));
-            cv.roundRect(x0, by, bw, 10, 5, '#3f3f3f');
-            if (tot > 0) {
-                const el = shownAt(), bf = focusKey === 'ov:bar';
-                drawProgress(cv, x0, by, at(el) - x0, 10);
-                if (ex) ex.chapters.forEach((k) => { if (k[0] > 0) cv.fillRect(at(k[0]) - 2, by, 4, 10, C.bg); });
-                if (bf) cv.circle(at(el), by + 5, 24, '#3ea6ff');
-                cv.circle(at(el), by + 5, bf ? 18 : 14, el > 0 ? progressTip : C.red);
-                progressTarget(x0, by - 36, bw, 80);
-                cv.text(clock(el), x0, by + 50, 26, C.dim, LIT);
-                cv.text('-' + clock(tot - el), x0 + bw, by + 50, 26, C.dim, { literal: true, align: 'right' });
-            } else if (model.state === 'preparing') cv.text(prepText(), x0, by + 50, 26, C.dim, LIT);
-            // controls
-            const mid = x0 + bw / 2 + (queue.length ? 0 : 100);   // with Next: four buttons; without: three, centred
-            const big = (key, x, r, light, fn, glyph) => {
-                const f = focusKey === key;
-                cv.circle(x, cy, r, f ? '#3ea6ff' : light ? '#ffffff' : C.ph);
-                glyph(light && !f ? C.bg : '#ffffff');
-                tg(x - r - 10, cy - r - 10, 2 * r + 20, 2 * r + 20, run(fn), key, r + 10);
-            };
-            const num = (t, x) => (c) => cv.text(t, x, cy + 14, 38, c, { literal: true, font: 'bold', align: 'center' });
-            if (live) {
-                big('ov:rw', mid - 300, 58, false, () => model.skip(-10000), num('-10', mid - 300));
-                big('ov:play', mid - 100, 72, true, () => model.toggle(), (c) => {
-                    if (model.state === 'paused') tri(cv, mid - 92, cy, 60, c);
-                    else { cv.roundRect(mid - 124, cy - 32, 16, 64, 4, c); cv.roundRect(mid - 92, cy - 32, 16, 64, 4, c); }
-                });
-                big('ov:ff', mid + 100, 58, false, () => model.skip(10000), num('+10', mid + 100));
-            }
-            else if (model.state === 'error' && model.id) big('ov:play', mid - 100, 72, true, again, (c) => retryGlyph(cv, mid - 100, cy, 30, c));
-            if (queue.length) {
-                const nx = mid + 300;
-                big('ov:next', nx, 58, false, () => { const r = queue.shift(); play(r.id, r); }, (c) => {
-                    cv.quad([[nx - 22, cy - 26], [nx - 22, cy + 26], [nx + 12, cy], [nx - 22, cy - 26]], c); cv.fillRect(nx + 14, cy - 26, 9, 52, c);
-                });
-                const up = 'Tiếp theo  ·  ' + String(queue[0].title || queue[0].id), uw = Math.min(700, cv.textWidth(up, 26, LIT) + 50);
-                cv.roundRect(SW - 60 - uw, SH - 96, uw, 64, 16, '#1c1c1c');
-                cv.text(fit(cv, up, 26, uw - 50, LIT), SW - 60 - uw + 25, SH - 54, 26, '#dddddd', LIT);
-            }
-            const ask = askSeg();
-            if (ask) {
-                const tt = 'Bỏ qua ' + sbName(ask[2]), w2 = cv.textWidth(tt, 30, LITB) + 80, f = focusKey === 'ov:sbskip';
-                cv.roundRect(x0, SH - 100, w2, 72, 36, f ? '#3ea6ff' : '#ffffff');
-                cv.text(tt, x0 + 40, SH - 52, 30, f ? '#ffffff' : C.bg, LITB);
-                tg(x0, SH - 100, w2, 72, run(sbJump(ask)), 'ov:sbskip', 36);
-            } else if (model.toast && Date.now() < model.toast.until) {
-                const tt = model.toast.text, w2 = cv.textWidth(tt, 26, LIT) + 60, wn = model.toast.warn;
-                cv.roundRect(x0, SH - 96, w2, 64, 32, wn ? '#4a3a10' : '#1f3d1f');
-                cv.text(tt, x0 + 30, SH - 54, 26, wn ? '#ffd27a' : '#7ee07e', LIT);
-            }
-            if (model.state === 'error') cv.text(fit(cv, 'Lỗi: ' + (VI.error(model.error) || 'đã dừng phát'), 28, bw, LIT), x0, SH - 54, 28, '#ff6b6b', LIT);
-        }
         // the Up next panel, over the right of the picture: a thumb, two lines of title and the channel for each of the next videos
         function drawUpNext(cv, SW, SH, cy, tg, run) {
             const pw = 520, px = SW - pw - 24, py = 112, rowH = 108, head = 62, avail = SH - 170 - py;
@@ -1064,9 +979,8 @@ mgu.run({
             void cv.extra;
             const tg = (x, y, w, h, run, key, r, turn) => cv.target(x - dx, y - dy, w, h, run, key, r, turn);
             cv.xf(1, 0, 0).fillRect(0, 0, pl.w, pl.h, '#000000');
-            const pod = model.active() && noVideo();   // driving: podcast mode (no picture, big controls, always shown)
-            if (videoShown && !pod) cv.video(VID, 0, 0, pl.w, pl.h, 0);
-            if (!overlay() && !pod) { cv.xf(); OVK.forEach((k) => tg(0, 0, SW, SH, wake, k, 0, k === 'ov:bar' ? turnSeek : undefined)); return; }
+            if (videoShown) cv.video(VID, 0, 0, pl.w, pl.h, 0);
+            if (!overlay()) { cv.xf(); OVK.forEach((k) => tg(0, 0, SW, SH, wake, k, 0, k === 'ov:bar' ? turnSeek : undefined)); return; }
             cv.xf(s, 0, 0);
             const LX = HMI.left / s, act = model.active(), live = model.state === 'playing' || model.state === 'paused';
             const cx = SW / 2, cy = SH / 2 - 6, run = (fn) => () => { fn(); wake(); };
@@ -1074,7 +988,6 @@ mgu.run({
                 scrubTrack = { x: x * s, y: y * s, w: w * s, h: h * s, pad: 10 * s };
                 tg(x - 10, y, w + 20, h, run(() => model.toggle()), 'ov:bar', 0, turnSeek);
             };
-            if (pod) { drawPodcast(cv, SW, SH, LX, tg, run, live, progressTarget); hmiIcons(cv); return; }
             // a round control: dark, white when the controller is on it (its glyph dark then)
             const ctl = (key, x, y, r, fn, glyph) => {
                 const f = focusKey === key;
@@ -1106,7 +1019,6 @@ mgu.run({
                 mid = 'Phát tiếp sau ' + Math.max(1, Math.ceil((nextAt - Date.now()) / 1000)) + ' giây: ' + String(up.title || up.id);
                 ctl('ov:play', cx, cy, 58, () => { nextAt = 1; }, (c) => tri(cv, cx + 5, cy, 46, c));
             } else if (!act && model.state !== 'error') mid = model.state === 'ended' ? 'Đã phát xong' : 'Chọn video trong Trang chủ hoặc Tìm kiếm';
-            else if (noVideo()) mid = 'Xe đang chạy — chỉ phát âm thanh';
             else if (!gpu()) mid = 'Cần mgu-render để hiện hình — âm thanh vẫn phát';
             else if (live && !videoShown) mid = 'Đang mở hình ảnh…';
             // sought past the picture fetched so far: the sound plays on, the picture comes when the download reaches there
