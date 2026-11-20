@@ -144,7 +144,7 @@ async function main() {
     const ctl = path.join(tmp, 'fetch.ctl');
     const d = new Daemon({
         someip: someip, srcGen: srcGen, ytdec: fakeYtdec, cacheDir: cache, logDir: tmp, sock: path.join(tmp, 'ctl.sock'),
-        watchdogMs: 800, tickMs: 200, keep: 20, stateDir: stateDir, noSetuid: true, spare: false, resume: false, fetchRetryMs: [],
+        watchdogMs: 800, pictureMs: 600, pictureRetryMs: 2500, tickMs: 200, keep: 20, stateDir: stateDir, noSetuid: true, spare: false, resume: false, fetchRetryMs: [],
         fetcher: [process.execPath, path.join(__dirname, 'fake_ytfetch.js'), ctl],
         accountFile: acct, ytRequest: fakeYt, log: (m) => logs.push(m)
     });
@@ -393,6 +393,52 @@ async function main() {
         setMode('ok');
         c.send({ cmd: 'stop' });
         await c.waitFor((x) => x.ev === 'state' && x.state === 'idle');
+    });
+
+    await t('picture: decoding but no frame shown -> ytdec is sought to the clock (no audio call); shown again -> left alone', async () => {
+        await sleep(500); fs.writeFileSync(ytlog, ''); setMode('noshow');
+        await playing();
+        calls.length = 0;
+        const seeks = () => ytdecLines().filter((l) => / in seek /.test(l)).length;
+        for (let k = 0; k < 14 && !seeks(); k++) { tick(1000 + k * 200); await sleep(200); }
+        assert.strictEqual(seeks(), 1, 'one ytdec seek: ' + ytdecLines().filter((l) => !/ in clock/.test(l)).join('; '));
+        assert.ok(logs.some((l) => /picture: no frame shown/.test(l)));
+        assert.strictEqual(called('setTime').length, 0, 'the sound is not touched');
+        for (let k = 0; k < 10; k++) { tick(4000 + k * 200); await sleep(200); }
+        assert.strictEqual(seeks(), 1, 'the picture is back: no more seeks');
+        assert.strictEqual(ytdecLines().filter((l) => / argv /.test(l)).length, 1, 'the same ytdec');
+        c.send({ cmd: 'stop' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'idle');
+    });
+
+    await t('picture: two seeks in vain -> ytdec started again; paused: nothing', async () => {
+        await sleep(500); fs.writeFileSync(ytlog, ''); setMode('blind');
+        await playing();
+        const argvs = () => ytdecLines().filter((l) => / argv /.test(l)).length;
+        for (let k = 0; k < 30 && argvs() < 2; k++) { tick(1000 + k * 200); await sleep(200); }
+        assert.strictEqual(argvs(), 2, 'a second ytdec: ' + ytdecLines().filter((l) => !/ in clock/.test(l)).join('; '));
+        assert.ok(logs.some((l) => /picture: still no frame shown/.test(l)));
+        assert.ok(!c.evs.some((x) => x.ev === 'error'), 'no error on the way');
+        c.send({ cmd: 'pause' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'paused');
+        const n = ytdecLines().filter((l) => / in seek /.test(l)).length, a2 = argvs();
+        await sleep(1600);
+        assert.strictEqual(ytdecLines().filter((l) => / in seek /.test(l)).length, n, 'paused: no picture seeks');
+        assert.strictEqual(argvs(), a2);
+        setMode('ok');
+        c.send({ cmd: 'stop' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'idle');
+    });
+
+    await t('picture given up (two deaths): tried again by itself later, and it comes back', async () => {
+        await sleep(500); fs.writeFileSync(ytlog, ''); setMode('crash');
+        await playing();
+        tick(4000);
+        await c.waitFor((x) => x.ev === 'error' && /audio only/.test(x.msg), 3000);
+        setMode('ok');
+        const argvs = () => ytdecLines().filter((l) => / argv /.test(l)).length;
+        for (let k = 0; k < 25 && argvs() < 3; k++) { tick(4200 + k * 200); await sleep(200); }
+        assert.strictEqual(argvs(), 3, 'a third ytdec after the wait');
+        assert.ok(d.child, 'and it stays');
+        c.send({ cmd: 'stop' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'idle');
+        c.clear();
     });
 
     await t('fetcher error after playback began: one "video incomplete" error, audio plays on', async () => {

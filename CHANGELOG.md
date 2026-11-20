@@ -1,5 +1,10 @@
 # Changelog
 
+## Service 0.3.29 (app 0.3.39)
+
+- Black picture with the sound running: the service now watches the frames actually shown (ytdec's `shown`), not only decoded. No frame shown for 4 s while the sound plays: ytdec is sought to the clock by itself (what scrubbing by hand did; the sound is not touched); twice in vain, ytdec is started again. Logged as `picture: ...`.
+- The picture given up after two ytdec deaths ("video failed, audio only") is tried again every 15 s (4 times a video) instead of staying off until the video is opened again; a picture that runs well clears the count.
+
 ## App 0.3.39, service 0.3.28
 
 - Video while driving: with the setting already on, opening the app while the car moves now shows the picture (it came up in audio-only mode, "Chỉ âm thanh · xe đang chạy"). Only switching it on while moving still waits for a stop.

@@ -1306,6 +1306,8 @@ Daemon.prototype.play = async function (id, rect, fill, at, quality, skip, resto
     this.pct = 0;
     this.fetchedMs = Infinity;
     this.head = null;
+    this.retries = 0;
+    this.nudges = 0;
     this.underruns = [];
     this.recovering = false;
     this.headWait = false;
@@ -1760,6 +1762,10 @@ Daemon.prototype.spawnYtdec = function (seekMs) {
     this.child = child;
     this.lastProgress = Date.now();
     this.lastDecoded = -1;
+    this.lastShown = -1;
+    this.lastShownAt = Date.now();
+    this.seenShown = false;
+    this.shownStreak = 0;
     this.eof = false;
     child.stdin.on('error', () => { /* EPIPE when it dies: handled by exit */ });
     child.on('error', (e) => this.ytdecDied(child, e.message));
@@ -1782,6 +1788,15 @@ Daemon.prototype.onYtdecLine = function (child, l) {
         if (typeof m.decoded === 'number' && m.decoded !== this.lastDecoded) {
             this.lastDecoded = m.decoded;
             this.lastProgress = Date.now();
+        }
+        // frames on screen (not only decoded): what the picture watchdog goes by
+        if (typeof m.shown === 'number') {
+            this.seenShown = true;
+            if (m.shown !== this.lastShown) {
+                this.lastShown = m.shown;
+                this.lastShownAt = Date.now();
+                if (++this.shownStreak >= 5) { this.nudges = 0; this.deaths = 0; }   // a healthy picture: its past troubles are over
+            } else this.shownStreak = 0;
         }
     } else if (m.ev === 'ready') {
         this.lastProgress = Date.now();
@@ -1807,14 +1822,45 @@ Daemon.prototype.ytdecDied = function (child, why) {
     if (!this.ticking) return;
     this.deaths++;
     this.log('ytdec died (' + why + '), death ' + this.deaths);
+    this.diedAt = Date.now();
     if (this.deaths === 1) return this.spawnYtdec(this.elapsed);
     this.emit({ ev: 'error', msg: 'video failed, audio only' });
     return undefined;
 };
 Daemon.prototype.watchdog = function () {
+    // the picture given up (two deaths in a row): tried again every 15 s, 4 times a video, so it comes back by itself
+    if (!this.child && this.ticking && this.state === 'playing' && this.videoOn && this.deaths >= 2 && this.cur
+        && (this.retries || 0) < 4 && Date.now() - (this.diedAt || 0) > (this.opts.pictureRetryMs || 15000)) {
+        this.retries = (this.retries || 0) + 1;
+        this.log('picture: trying ytdec again (' + this.retries + ')');
+        this.deaths = 1;
+        this.spawnYtdec(this.elapsed + (Date.now() - this.lastTickAt));
+        return;
+    }
     if (!this.child || this.state !== 'playing' || !this.videoOn || this.eof) return;
     // waiting for video not fetched yet (buffering, or the fetcher ended early): not a stall
     if (this.headWait || this.elapsed + 1000 > this.fetchedMs) { this.lastProgress = Date.now(); return; }
+    // decoding, the sound running, yet no frame shown for 4 s (a black or frozen picture): what a seek by hand cures
+    // is done here - ytdec seeks to the clock (the sound is not touched); twice in vain, ytdec is started again
+    const stuck = this.opts.pictureMs || 4000;
+    if (this.seenShown && !this.switching && !this.paused && Date.now() - this.lastShownAt > stuck && Date.now() - this.lastTickAt < 1500) {
+        const at = this.elapsed + (Date.now() - this.lastTickAt);
+        this.lastShownAt = Date.now();
+        if ((this.nudges || 0) < 2) {
+            this.nudges = (this.nudges || 0) + 1;
+            this.log('picture: no frame shown for ' + stuck + ' ms (decoded ' + this.lastDecoded + ', shown ' + this.lastShown + '): ytdec seek ' + at + ' (' + this.nudges + ')');
+            this.toYtdec('seek ' + at);
+            this.lastProgress = Date.now();
+            return;
+        }
+        this.nudges = 0;
+        this.log('picture: still no frame shown: ytdec started again');
+        this.deaths = 0;
+        const k = this.child;
+        try { k.kill('SIGKILL'); } catch (e) { /* gone */ }
+        this.lastProgress = Date.now();
+        return;
+    }
     if (Date.now() - this.lastProgress < this.opts.watchdogMs) return;
     this.log('watchdog: no decoded frames for ' + this.opts.watchdogMs + ' ms');
     const c = this.child;
