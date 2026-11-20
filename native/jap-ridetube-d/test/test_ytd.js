@@ -1035,6 +1035,26 @@ async function main() {
         yt.browse = kb; yt.search = ks;
     });
 
+    await t('signed in while the general Home loads: that load answers with the account\'s own Home (asks joined to it are not lost)', async () => {
+        c.clear(); yt.calls.length = 0;
+        const kb = yt.browse;
+        yt.browse = async (h) => {
+            if (!h || !h.Authorization) { await sleep(250); return ok({ contents: { a: [tile('GUEST000002', 'TILE_CONTENT_TYPE_VIDEO', 'General', 'G', '3:00')] } }); }
+            return ok({ contents: { a: [tile('MINE0000001', 'TILE_CONTENT_TYPE_VIDEO', 'Mine', 'M', '3:00')], logo: { iconType: 'YOUTUBE_PREMIUM_LOGO' } } });
+        };
+        c.send({ cmd: 'feed', which: 'home' });
+        await waitUntil(() => ytCalls('/youtubei/v1/browse').length === 1);
+        fs.mkdirSync(path.dirname(acct), { recursive: true, mode: 0o700 });
+        fs.writeFileSync(acct, JSON.stringify({ cid: 'x', sec: 'y', access: 'ACCESS-9', refresh: 'R', exp: Date.now() + 1e7 }), { mode: 0o600 });
+        c.send({ cmd: 'feed', which: 'home' });   // (the app's ask on signed_in: joined to the load under way)
+        const e = await c.waitFor((x) => x.ev === 'feed' && x.which === 'home');
+        assert.ok(!e.guest && e.items[0].id === 'MINE0000001', JSON.stringify(e).slice(0, 200));
+        assert.ok(!c.evs.some((x) => x.ev === 'feed' && x.guest), 'no guest answer');
+        await c.waitFor((x) => x.ev === 'premium' && x.value === true);
+        fs.unlinkSync(acct);
+        yt.browse = kb;
+    });
+
     await t('auth_status with no account: signed out', async () => {
         c.clear();
         c.send({ cmd: 'auth_status' });

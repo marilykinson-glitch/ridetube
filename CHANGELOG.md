@@ -1,5 +1,10 @@
 # Changelog
 
+## App 0.3.41, service 0.3.32
+
+- Signing in while the general Home loads no longer leaves Home empty: that load answers with the account's own Home.
+- Premium in the header only when the service found the account's Premium mark (not known: not shown). When it finds none, the log lists where the Home answer mentions premium (`premium: no mark ... mentions: ...`).
+
 ## App 0.3.40, service 0.3.31
 
 - Home with nobody signed in: general videos (YouTube's own Home for no account when it gives one, else a shelf per topic from searches) with a Sign in tile first. The card with the QR code comes only when Sign in is asked (the tile, or Sign in in the menu); Subscriptions, Watch later and Library still show it. The card says the sign-in happens on the phone, on Google's page.

@@ -485,9 +485,9 @@ mgu.run({
             }
             return w + gap + cv.textWidth('Premium', size, premiumOptions) + size * 0.12 + cv.textWidth(REGION, rs(size), LIT);
         }
-        // Premium: when the service found the account's Premium mark; not when it saw ads; not known (an older service, no mark): as before
+        // Premium: only when the service found the account's Premium mark (not known: not shown)
         const REGION = 'VN', rs = (size) => Math.max(14, Math.round(size * 0.55));
-        const premiumActive = () => model.auth.state === 'signed_in' && model.premium !== false;
+        const premiumActive = () => model.auth.state === 'signed_in' && model.premium === true;
         if (ctx.display) ctx.display.headerMark = (cv, size, x, y, color) =>
             premiumActive() ? premium(cv, size, x, y, color) : 0;
 

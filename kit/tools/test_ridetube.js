@@ -614,7 +614,10 @@ async function appFrames() {
     await sleep(100);
     assert.strictEqual(d.cmds('auth').length, 1, 'another feed tab: the code shown, not asked again');
     d.send({ ev: 'auth', state: 'signed_in' });
-    await until(() => disp.headerMark({ textWidth: () => 100 }, 32) > 100, 2000, 'signed in replaces the header name with the Premium mark');
+    await sleep(100);
+    assert.strictEqual(disp.headerMark({ textWidth: () => 100 }, 32), 0, 'signed in, Premium not known: the app name stays');
+    d.send({ ev: 'premium', value: true });
+    await until(() => disp.headerMark({ textWidth: () => 100 }, 32) > 100, 2000, 'a Premium account: the Premium mark replaces the header name');
     await until(() => d.cmds('feed').filter((x) => x.which === 'subs').length === 1, 2000, 'signed in on Subscriptions: its feed asked');
     await drawn();
     assert.ok(texts.indexOf('Đang tải Kênh đăng ký...') >= 0, texts.join('|'));

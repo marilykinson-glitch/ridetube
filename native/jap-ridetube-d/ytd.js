@@ -691,9 +691,19 @@ Account.prototype.guestHome = async function () {
         shelves.forEach((x) => x.items.forEach((it) => { if (!seen[it.id]) { seen[it.id] = true; items.push(it); } }));
         if (!items.length) throw new Error('guest home: nothing from the searches either');
     }
-    this.emit({ ev: 'feed', which: 'home', guest: true, items: items.slice(0, FEED_MAX), shelves: shelves });
-    return undefined;
+    return { items: items.slice(0, FEED_MAX), shelves: shelves };
 };
+// where an answer mentions premium at all (key paths and short values, 8 at most): for the log, to find the account's mark
+function premiumMentions(root) {
+    const out = [];
+    (function walk(o, d, at) {
+        if (out.length >= 8 || o === null || o === undefined || d > 40) return;
+        if (typeof o === 'string') { if (/premium/i.test(o)) out.push(at + '=' + o.slice(0, 40)); return; }
+        if (typeof o !== 'object') return;
+        Object.keys(o).forEach((k) => walk(o[k], d + 1, (at ? at.split('.').slice(-3).join('.') + '.' : '') + k));
+    })(root, 0, '');
+    return out.join(' | ') || 'none';
+}
 // an enum-like string with PREMIUM in it anywhere in an answer (the Premium logo's type)
 function premiumMark(root) {
     let hit = false;
@@ -717,9 +727,13 @@ Account.prototype.feed = function (which) {
     return this.feeding[which];
 };
 Account.prototype.loadFeed = async function (which) {
-    const g = this.gen;
     try {
-        if (which === 'home' && !this.load()) return await this.guestHome();   // nobody signed in: the general Home
+        if (which === 'home' && !this.load()) {   // nobody signed in: the general Home
+            const gh = await this.guestHome();
+            // signed in while it loaded: the asks made meanwhile were joined to this load, so the account's own Home follows here
+            if (!this.load()) { this.emit({ ev: 'feed', which: 'home', guest: true, items: gh.items, shelves: gh.shelves }); return undefined; }
+        }
+        const g = this.gen;
         let r = await this.browse(FEEDS[which], await this.token(false));
         if (r.status === 401) r = await this.browse(FEEDS[which], await this.token(true)); // the token died early
         if (g !== this.gen) throw Object.assign(new Error('signed out'), { signedOut: true });
@@ -727,7 +741,7 @@ Account.prototype.loadFeed = async function (which) {
         this.emit({ ev: 'feed', which: which, items: feedItems(r.j).slice(0, FEED_MAX), shelves: feedShelves(r.j) });
         if (which === 'home') {   // a Premium account's Home carries a PREMIUM mark (its logo type); none found: not known, said in the log once
             if (premiumMark(r.j)) { this.premium = true; this.emit({ ev: 'premium', value: true }); }
-            else if (!this.premiumLogged) { this.premiumLogged = true; this.log('premium: no mark in the home answer (top: ' + Object.keys(r.j).join(',') + ')'); }
+            else if (!this.premiumLogged) { this.premiumLogged = true; this.log('premium: no mark in the home answer (top: ' + Object.keys(r.j).join(',') + '; mentions: ' + premiumMentions(r.j) + ')'); }
         }
     } catch (e) {
         if (!e.signedOut) this.log('feed ' + which + ': ' + e.message);
