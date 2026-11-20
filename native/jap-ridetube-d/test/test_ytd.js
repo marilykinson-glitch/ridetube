@@ -435,6 +435,21 @@ async function main() {
         c.send({ cmd: 'stop' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'idle'); c.clear();
     });
 
+    await t('seek the player never takes (every setTime dropped): sent twice more, then the picture and the app follow the sound where it is', async () => {
+        fs.writeFileSync(ytlog, ''); setMode('ok');
+        await playing();
+        tick(30000); await sleep(50);
+        d.opts.settleMs = 150; calls.length = 0; c.clear();
+        c.send({ cmd: 'seek', ms: 50000 }); await waitUntil(() => called('setTime').length === 1);
+        for (let k = 1; k <= 12 && d.settle; k++) { tick(30000 + k * 100); await sleep(100); }
+        assert.strictEqual(called('setTime').length, 3, 'asked three times in all');
+        assert.ok(d.elapsed > 30000 && d.elapsed < 32000, 'the place is the player\'s: ' + d.elapsed);
+        assert.ok(ytdecLines().some((l) => / in seek 30\d\d\d$/.test(l)), 'ytdec sought back to where the sound is');
+        await c.waitFor((x) => x.ev === 'time' && x.elapsed > 30000 && x.elapsed < 32000, 1000);
+        d.opts.settleMs = 0;
+        c.send({ cmd: 'stop' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'idle'); c.clear();
+    });
+
     await t('picture: decoding but no frame shown -> ytdec is sought to the clock (no audio call); shown again -> left alone', async () => {
         await sleep(500); fs.writeFileSync(ytlog, ''); setMode('noshow');
         await playing();

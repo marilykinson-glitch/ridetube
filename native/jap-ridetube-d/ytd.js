@@ -1479,7 +1479,7 @@ Daemon.prototype.switchToFull = async function () {
     this.headWait = false;
     this.elapsed = target;
     this.lastTickAt = Date.now();
-    this.settle = { ms: target, until: Date.now() + 3000 };
+    this.settle = { ms: target, until: Date.now() + (this.opts.settleMs || 3000) };
     if (waiting) {
         this.toYtdec('seek ' + target);
         if (!this.paused) this.toYtdec('resume');
@@ -1666,7 +1666,7 @@ Daemon.prototype.resume = async function () {
         if (gen !== this.gen || this.state !== 'playing') return;
         const at = this.stoppedAt;  // (a seek meanwhile moved it: seek() keeps it while the file restarts)
         this.stoppedAt = null;
-        this.settle = { ms: at, until: Date.now() + 3000 };
+        this.settle = { ms: at, until: Date.now() + (this.opts.settleMs || 3000) };
         await this.audio.seek(at);
         return;
     }
@@ -1683,7 +1683,7 @@ Daemon.prototype.seek = async function (ms) {
     this.lastProgress = Date.now();
     this.lastTickAt = Date.now();
     // the player's times until the setTime lands are the old place's: not taken (they would set the app and ytdec back there)
-    this.settle = { ms: ms, until: Date.now() + 3000, at: Date.now(), both: true };
+    this.settle = { ms: ms, until: Date.now() + (this.opts.settleMs || 3000), at: Date.now(), both: true };
     this.toYtdec('seek ' + ms);
     // shortcut: once waiting, a seek back into the head still waits for audio.m4a (a few s), simpler than replaying the head
     if (this.headWait) return this.checkBuffering();
@@ -1732,13 +1732,19 @@ Daemon.prototype.onTime = function (v) {
     if (this.settle && (v.elapsed < this.settle.ms - 2000 || (this.settle.both && v.elapsed > this.settle.ms + (Date.now() - this.settle.at) + 2500))) {
         if (Date.now() < this.settle.until) return; // before our setTime landed
         // it never landed (the player dropped the setTime): once more, rather than playing on from where the file started
-        if (!this.settle.again) {
-            this.settle.again = true;
-            this.settle.until = Date.now() + 3000;
-            this.log('audio: setTime ' + this.settle.ms + ' did not land (at ' + v.elapsed + '), sent again');
+        if ((this.settle.again || 0) < 2) {   // twice more
+            this.settle.again = (this.settle.again || 0) + 1;
+            this.settle.until = Date.now() + (this.opts.settleMs || 3000);
+            this.settle.at = Date.now();
+            this.log('audio: setTime ' + this.settle.ms + ' did not land (at ' + v.elapsed + '), sent again (' + this.settle.again + ')');
             this.audio.seek(this.settle.ms);
             return;
         }
+        // the player keeps its place whatever we ask: that is where the sound is, so the picture and the app go there too
+        // (rather than a picture waiting at the place asked for)
+        this.log('audio: setTime ' + this.settle.ms + ' never landed, staying at ' + v.elapsed);
+        this.toYtdec('seek ' + v.elapsed);
+        this.emit({ ev: 'toast', text: 'Không tua được — phát tiếp ở vị trí hiện tại', warn: true });
     }
     this.settle = null;
     this.elapsed = v.elapsed;
@@ -1756,7 +1762,7 @@ Daemon.prototype.onTime = function (v) {
             // the player's times until the setTime lands are the file's start: not ours (a pause then would hold at 0),
             // and the app is told where it is now (its +10 s / -10 s go from there)
             if (this.state === 'playing' && this.elapsed === at) {
-                this.settle = { ms: at, until: Date.now() + 3000 };
+                this.settle = { ms: at, until: Date.now() + (this.opts.settleMs || 3000) };
                 this.emit({ ev: 'time', elapsed: at, total: this.total });
             }
             return;

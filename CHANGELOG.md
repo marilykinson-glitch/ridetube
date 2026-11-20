@@ -1,5 +1,10 @@
 # Changelog
 
+## App 0.3.47, service 0.3.36
+
+- A seek the player never takes (every setTime dropped): asked three times in all, then the picture and the app follow the sound where it is (a notice says the seek failed) instead of the picture waiting at the place asked for.
+- The 1080p choice is no longer marked experimental.
+
 ## App 0.3.46, service 0.3.35
 
 - Video quality: a 1080p choice (experimental: H.264 1080p, shown at the screen's 720 lines; slower to open, may stutter). Auto is unchanged.

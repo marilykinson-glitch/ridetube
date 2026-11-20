@@ -202,6 +202,8 @@ class Model {
                 if (!f.shelves.length) f.shelves = null;
                 this._prune();
             }
+        } else if (m.ev === 'toast') {
+            this.toast = { text: String(m.text || '').slice(0, 80), warn: m.warn === true, until: Date.now() + 5000 };
         } else if (m.ev === 'premium') {
             this.premium = m.value === true ? true : m.value === false ? false : undefined;
         } else if (m.ev === 'positions') {
