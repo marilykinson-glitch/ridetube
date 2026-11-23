@@ -1760,6 +1760,7 @@ Daemon.prototype.restartAudio = async function () {
         return;
     }
     this.lastRawAt = Date.now();
+    this.sendState();
     if (keepRestart && this.restart === keepRestart) {
         this.toYtdec('resume');
         return;
