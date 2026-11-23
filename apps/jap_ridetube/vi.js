@@ -8,6 +8,7 @@ const errors = {
     'bad channel': 'Kênh không hợp lệ.',
     'bad id': 'Video không hợp lệ.',
     'video failed, audio only': 'Không phát được hình ảnh; âm thanh vẫn tiếp tục.',
+    'audio does not start': 'Không khởi động được bộ phát âm thanh trên xe. Bấm Thử lại.',
     'access_denied': 'Yêu cầu đăng nhập bị từ chối.',
     'expired_token': 'Mã đăng nhập đã hết hạn. Lấy mã mới để thử lại.',
     'timeout': 'Kết nối quá thời gian chờ.',

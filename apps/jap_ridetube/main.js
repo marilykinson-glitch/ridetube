@@ -84,7 +84,17 @@ mgu.run({
         const ctl = new Ctl(process.env.MGU_YT_SOCKET || SOCKET, log);
         const model = new Model((o) => ctl.send(o));
         let mode = 'home', browse = 'home', dirty = true;   // browse: the list the player goes back to
-        const changed = () => { dirty = true; if (ctx.background) ctx.background('playing', model.active()); labels(); };
+        let queue = [], nextAt = 0, upNext = null, pausedSince = 0;
+        const PAUSE_HOLD_MS = 300000;                        // release ACTIVE hold after 5 min paused so MainApp can reclaim RAM
+        const syncBackground = () => {
+            if (!ctx.background) return;
+            if (model.state === 'paused') { if (!pausedSince) pausedSince = Date.now(); } else pausedSince = 0;
+            const hold = model.state === 'playing' || model.state === 'preparing'
+                || (model.state === 'paused' && Date.now() - pausedSince < PAUSE_HOLD_MS)
+                || (model.state === 'ended' && queue.length > 0 && mode === 'player');
+            ctx.background('playing', hold);
+        };
+        const changed = () => { dirty = true; syncBackground(); labels(); };
         const isFeed = (m) => FEEDS.indexOf(m) >= 0;
         // a feed tab: signed in, (re)load it; signed out, ask for a sign-in code (the daemon says the one shown again).
         // A new device flow starts only from here (show), the account button or the page's "tap" - never on its own
@@ -157,7 +167,13 @@ mgu.run({
             ui.open('VIEW');
         }
         const askSearch = () => spell(ctx.app, 'Tìm video')
-            .then(search)
+            .then((q) => {
+                if (q === null || q === undefined || !String(q).trim()) {
+                    ui.open(ui.isVisible('MAIN') && !ui.isVisible('VIEW') ? 'MAIN' : 'VIEW');
+                    return;
+                }
+                search(q);
+            })
             .catch((e) => {
                 log.error('speller', e);
                 ui.open('MAIN');
@@ -193,7 +209,15 @@ mgu.run({
         }
         const info = () => ui.text('MAIN_INFO', statusText());
         info();
-        setInterval(() => { try { model.checkSearch(Date.now(), SEARCH_MS); model.checkFeeds(Date.now(), FEED_MS); if (ui.isVisible('MAIN')) info(); } catch (e) { log.error('info', e); } }, 1000);
+        setInterval(() => {
+            try {
+                model.checkSearch(Date.now(), SEARCH_MS);
+                model.checkFeeds(Date.now(), FEED_MS);
+                if (!ui.isVisible('VIEW')) upNext = autoNext();
+                syncBackground();
+                if (ui.isVisible('MAIN')) info();
+            } catch (e) { log.error('info', e); }
+        }, 1000);
 
         /* ---------- playing ---------- */
         // the decoder's picture size. Full-screen layout: the whole screen, for the full view (ytdec fits, or
@@ -216,7 +240,6 @@ mgu.run({
             dirty = true;
         });
         const QUALITIES = ['auto', '720', '480', '360', '1080'];   // app.json's Video quality values, in the button's order
-        let queue = [], nextAt = 0;
         const played = [];                                // the videos played in this run, newest last (related ones that were played are skipped)
         // the list ran out: YouTube's own "up next" for the playing video carries on (the daemon's `related`)
         function topUpQueue() {
@@ -604,7 +627,7 @@ mgu.run({
             const hits = model.findChannels(chanQ);
             const all = { id: '::all', title: 'Tất cả kênh', sub: ch.items.length + ' kênh đăng ký', act: () => { chanQ = ''; vs('subs').off = {}; dirty = true; }, glyph: ALL };
             return [{ title: (chanQ.length === 1 ? 'Kênh bắt đầu bằng “' : 'Kênh khớp với “') + chanQ + '”',
-                sub: hits.length ? hits.length + (hits.length === 1 ? ' kênh' : ' kênh') : 'none', items: [find, all].concat(hits), chan: true, grid: true }];
+                sub: hits.length ? hits.length + ' kênh' : '0 kênh', items: [find, all].concat(hits), chan: true, grid: true }];
         }
         function drawChannel(cv) {
             const c = model.chan;
@@ -1101,7 +1124,7 @@ mgu.run({
             cv.polyline([[60, 384], [46, 398], [60, 412]], 5, '#ffffff');
             cv.xf();
         }
-        let last = null, lastRev = -1, lastT = 0, upNext = null;
+        let last = null, lastRev = -1, lastT = 0;
         function render() {
             const now = Date.now();
             upNext = autoNext();

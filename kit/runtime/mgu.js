@@ -77,8 +77,8 @@ const log = {};
     };
 });
 
-// crashes otherwise only reach DLT; keep the reason next to the app's log
-process.on('uncaughtException', (e) => { fileLog('FATAL', 'uncaught: ' + (e && e.stack || e)); process.exit(1); });
+// crashes otherwise only reach DLT; keep the reason next to the app's log (no process.exit: CorruptAppsHandler wipes data)
+process.on('uncaughtException', (e) => { fileLog('FATAL', 'uncaught: ' + (e && e.stack || e)); });
 process.on('exit', (code) => fileLog(code ? 'FATAL' : 'INFO', 'exit code ' + code + ' rss=' + Math.round(process.memoryUsage().rss / 1048576) + 'MB'));
 
 /* ---------------- settings (persisted in data/settings.json) ---------------- */

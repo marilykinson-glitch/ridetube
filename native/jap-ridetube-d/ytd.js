@@ -802,6 +802,7 @@ function Audio(opts, handlers) {
     this.cc = null;
     this.mp = null;
     this.connId = null;
+    this.op = Promise.resolve();
 }
 Audio.prototype.init = async function () {
     if (this.cc && this.mp) return;
@@ -837,11 +838,15 @@ Audio.prototype.dropLeftovers = async function () {
     }
     return ours.length;
 };
-// release() waits for a play in flight, so a stop during connect/playFile still finds connId
-Audio.prototype.play = function (file) {
-    const p = this.playNow(file);
-    this.pending = p.catch(() => {});
+// Serialize connect/playFile, replay and release on one queue so a stop/pause during playFile
+// (or a resume during disconnect) never interleaves SOME/IP route changes.
+Audio.prototype.enqueue = function (fn) {
+    const p = this.op.then(fn, fn);
+    this.op = p.catch(function () {});
     return p;
+};
+Audio.prototype.play = function (file) {
+    return this.enqueue(() => this.playNow(file));
 };
 Audio.prototype.playNow = async function (file) {
     await this.init();
@@ -863,12 +868,10 @@ Audio.prototype.playNow = async function (file) {
 };
 // playFile again on the live connection: after a STOP the player needs the file, not PLAY
 Audio.prototype.replay = function (file) {
-    const p = this.mp.callMethod('playFile', { path: file, languageCode: 7695972 }, 5000).then((r) => {
+    return this.enqueue(() => this.mp.callMethod('playFile', { path: file, languageCode: 7695972 }, 5000).then((r) => {
         this.opts.log('replay ' + JSON.stringify(r));
         if (!r || r.EntError !== 'OK') throw new Error('playFile: ' + (r && r.EntError));
-    });
-    this.pending = p.catch(() => {}); // release() waits for it, as for play()
-    return p;
+    }));
 };
 Audio.prototype.button = function (b) {
     if (!this.mp) return Promise.resolve();
@@ -879,9 +882,24 @@ Audio.prototype.seek = function (ms) {
     if (!this.mp) return Promise.resolve();
     return this.mp.callMethod('setTime', { newTimeElapsed: ms }, 3000).catch((e) => this.opts.log('setTime failed: ' + e));
 };
-// Every exit path ends here. Safe to call twice.
-Audio.prototype.release = async function () {
-    if (this.pending) await this.pending;
+// True while our route (source 1046) is still active in AudioManager; false when disconnected or suspended.
+Audio.prototype.hasConnection = async function () {
+    if (this.connId === null || !this.cc) return false;
+    try {
+        const list = await this.cc.getValue('listOfMainConnections');
+        if (!Array.isArray(list)) return true;
+        return list.some((c) => c && c.sourceID === SOURCE_ID
+            && (this.connId === -1 || c.mainConnectionID === this.connId)
+            && (c.connectionState === undefined || c.connectionState === 'CS_CONNECTED' || c.connectionState === 1));
+    } catch (e) {
+        return true;
+    }
+};
+// Every exit and pause path ends here. Safe to call twice.
+Audio.prototype.release = function () {
+    return this.enqueue(() => this.releaseNow());
+};
+Audio.prototype.releaseNow = async function () {
     if (this.connId === null) return;
     const id = this.connId;
     this.connId = null;
@@ -913,6 +931,9 @@ function Daemon(o) {
     this.stoppedAt = null;
     this.lastTimeEv = 0;
     this.sawPlay = false;
+    this.sawTime = false;
+    this.stopping = false;
+    this.checkingAudio = false;
     this.ticking = false;
     this.preparing = null; // id the fetcher is writing
     this.fetcher = null;   // ytfetch.py, as the fetch uid
@@ -1360,6 +1381,7 @@ Daemon.prototype.play = async function (id, rect, fill, at, quality, skip, resto
     if (!/^\d{2,4}x\d{2,4}$/.test(String(rect))) rect = '1280x720';
     const own = restore || { ms: 0, paused: false, height: qualityHeight(quality, readJson(this.opts.leaseFile)) };
     own.restore = !!restore;
+    this.stopping = false;
     this.restart = own;
     await this.stop(null);
     if (this.restart !== own) return undefined;   // stopped (or replaced) while it stopped the one before
@@ -1421,6 +1443,7 @@ Daemon.prototype.play = async function (id, rect, fill, at, quality, skip, resto
     this.total = 0;
     this.stoppedAt = null;
     this.sawPlay = false;
+    this.sawTime = false;
     this.ticking = false;
     this.lastTickAt = Date.now();
     try {
@@ -1450,6 +1473,7 @@ Daemon.prototype.onFullAudio = function () {
         this.stoppedAt = this.elapsed;
         this.head = null;
         this.headWait = false;
+        this.audio.release().catch((e) => this.log('release on full audio: ' + e));
         return undefined;
     }
     return this.switchToFull();
@@ -1461,6 +1485,8 @@ Daemon.prototype.switchToFull = async function () {
     this.switching = true;
     this.head = null;
     this.sawPlay = false;
+    this.sawTime = false;
+    this.lastRawAt = Date.now();
     this.log('audio: head -> full at ' + this.elapsed + (waiting ? ' (waiting)' : ''));
     let target;
     try {
@@ -1583,10 +1609,13 @@ Daemon.prototype.stopFetch = function () {
 Daemon.prototype.failPlayback = async function (msg) {
     this.log('error: ' + msg);
     const g = ++this.gen;   // (what a pause/resume or recovery under way checks: it must not start the audio again)
+    this.stopping = true;
+    this.restart = null;
     this.ticking = false;
     this.killYtdec();
     await Promise.all([this.audio.release(), this.stopFetch()]);
     if (g !== this.gen) return;   // a new video (or a Stop) came in while this one tore down: the error is the old video's
+    this.stopping = false;
     this.setState('error');
     this.emit({ ev: 'error', msg: msg });
 };
@@ -1598,6 +1627,7 @@ Daemon.prototype.stop = async function (reason) {
         const p = this.cur && this.pos && this.pos[this.cur.id];
         if (this.cur && this.cur.track) this.ping(this.cur, true, !!(p && p.done));
     }
+    if (reason) { this.stopping = true; this.restart = null; } // ignore pause/resume/seek/quality/fill while tearing down
     const g = ++this.gen;
     this.ticking = false;
     this.killYtdec();
@@ -1605,6 +1635,7 @@ Daemon.prototype.stop = async function (reason) {
     // another stop or a new play came in while this one waited: it owns the state now (a late tail would wipe the new video)
     if (g !== this.gen) return;
     if (reason) {
+        this.stopping = false;
         this.restart = null;
         this.setState(reason);
         if (this.pos) this.sendPositions();
@@ -1616,54 +1647,86 @@ Daemon.prototype.stop = async function (reason) {
 // before it is dropped) or a play that has not reached the player yet; they change this.restart, which the first tick applies
 Daemon.prototype.waiting = function () { return !!(this.restart && (this.restart.restore || !this.ticking)); };
 Daemon.prototype.pause = async function () {
+    if (this.stopping) return;
     if (this.restart) this.restart.paused = true;   // a start under way (not yet ticking): it comes up paused
     if (this.waiting()) return;
     if (this.state !== 'playing') return;
     this.paused = true;
     this.toYtdec('pause');
     this.setState('paused'); // at once: the button's reply can take seconds, and a second tap must not send it twice
-    // the MediaPlayer answers OK to PAUSE (and PLAY) and plays on (car, 2026-11-03); STOP does stop it, and resume()
-    // starts the file again where it stopped
+    // the MediaPlayer answers OK to PAUSE (and PLAY) and plays on (car, 2026-11-03); release stops and disconnects
+    // the audio route, and resume() opens a fresh connection where it stopped
     this.savePos(true);
     if (this.cur && this.cur.track) this.ping(this.cur, true);
     if (this.headWait) return; // already stopped, waiting for audio.m4a
     await this.hold(this.elapsed); // (the last tick: at most a fraction of a second back)
 };
-// the player stopped at ms (STOP: our own, not the end of the file), for resume() to start it there again
+// the player stopped and disconnected at ms, for resume() to start it there again
 Daemon.prototype.hold = function (ms) {
     this.stoppedAt = ms;
     this.elapsed = ms;
     this.sawPlay = false;
-    return this.audio.button('STOP');
+    this.sawTime = false;
+    return this.audio.release();
+};
+// paused/muted/disconnected externally by the car (volume knob, source switch): hold as paused and free the sink
+Daemon.prototype.externalPause = function () {
+    if (this.state !== 'playing' && !this.waiting()) return Promise.resolve();
+    const at = this.elapsed || (this.restart && Math.floor(this.restart.ms)) || 0;
+    this.restart = null;
+    this.paused = true;
+    this.headWait = false;
+    this.toYtdec('pause');
+    this.setState('paused');
+    this.savePos(true);
+    if (this.cur && this.cur.track) this.ping(this.cur, true);
+    return this.hold(at);
+};
+Daemon.prototype.waitFirstTick = function (ms) {
+    return new Promise((resolve) => {
+        let timer = null;
+        const done = () => {
+            clearTimeout(timer);
+            if (this.tickWaiter === done) this.tickWaiter = null;
+            resolve();
+        };
+        this.tickWaiter = done;
+        timer = setTimeout(done, ms);
+    });
 };
 Daemon.prototype.resume = async function () {
+    if (this.stopping) return;
     if (this.restart) this.restart.paused = false;
     if (this.waiting()) return;
     if (this.state !== 'paused') return;
     this.paused = false;
     this.lastProgress = Date.now();
+    this.lastRawAt = Date.now();
     this.setState('playing');
     if (this.headWait) return; // still past the head: ytdec and the player stay paused until the switch
     if (this.stoppedAt !== null && this.stoppedAt !== undefined) { // the player stopped mid-file: start it again there
         const gen = this.gen;
         this.sawPlay = false; // the new file's own STOP/PLAY is not a stop mid-file
+        this.sawTime = false;
         this.toYtdec('seek ' + this.stoppedAt);
         this.toYtdec('resume');
         // stopped, the player ignores playFile and PLAY (car, 2026-11-03): a new connection, as a new video starts
         try {
             await this.audio.release();
-            if (gen !== this.gen) return;
+            if (gen !== this.gen || this.state !== 'playing' || this.paused) return;
             await this.audio.play(path.join(this.cur.dir, this.head ? 'audio.head.m4a' : 'audio.m4a'));
         } catch (e) {
-            if (gen === this.gen) await this.failPlayback('resume: ' + e.message);
+            if (gen === this.gen && this.state === 'playing') await this.failPlayback('resume: ' + e.message);
             return;
         }
-        if (gen !== this.gen && (this.state === 'error' || this.state === 'idle')) await this.audio.release().catch(() => undefined);   // (it started after the teardown released)
-        if (gen !== this.gen || this.state !== 'playing') return; // stopped, or paused again meanwhile
+        if (gen !== this.gen || this.state !== 'playing' || this.paused) {
+            if (this.state === 'error' || this.state === 'idle' || this.paused) await this.audio.release().catch(() => undefined);
+            return; // stopped, or paused again meanwhile
+        }
+        this.lastRawAt = Date.now();
         // a setTime before the new file's first tick is dropped (it started at 0 on the car): wait for one (3 s at most)
-        await new Promise((r) => { this.tickWaiter = r; setTimeout(r, 3000); });
-        this.tickWaiter = null;
-        if (gen !== this.gen || this.state !== 'playing') return;
+        await this.waitFirstTick(3000);
+        if (gen !== this.gen || this.state !== 'playing' || this.paused) return;
         const at = this.stoppedAt;  // (a seek meanwhile moved it: seek() keeps it while the file restarts)
         this.stoppedAt = null;
         this.settle = { ms: at, until: Date.now() + (this.opts.settleMs || 3000) };
@@ -1673,7 +1736,49 @@ Daemon.prototype.resume = async function () {
     this.toYtdec('resume');
     await this.audio.button('PLAY');
 };
+// Restart the audio connection in place (startup stall or full-file underrun), even while this.restart is still waiting
+// for its first tick (e.g. a quality change).
+Daemon.prototype.restartAudio = async function () {
+    const gen = this.gen;
+    if (!this.cur || this.state !== 'playing' || this.paused) return;
+    const keepRestart = this.restart;
+    const at = keepRestart ? (Math.floor(keepRestart.ms) || 0) : this.elapsed;
+    this.sawPlay = false;
+    this.sawTime = false;
+    this.toYtdec('pause');
+    if (!keepRestart) this.stoppedAt = at;
+    try {
+        await this.audio.release();
+        if (gen !== this.gen || this.state !== 'playing' || this.paused) return;
+        await this.audio.play(path.join(this.cur.dir, this.head ? 'audio.head.m4a' : 'audio.m4a'));
+    } catch (e) {
+        if (gen === this.gen && this.state === 'playing' && !this.paused) await this.failPlayback('audio restart: ' + e.message);
+        return;
+    }
+    if (gen !== this.gen || this.state !== 'playing' || this.paused) {
+        if (this.state === 'error' || this.state === 'idle' || this.paused) await this.audio.release().catch(() => undefined);
+        return;
+    }
+    this.lastRawAt = Date.now();
+    if (keepRestart && this.restart === keepRestart) {
+        this.toYtdec('resume');
+        return;
+    }
+    this.toYtdec('seek ' + at);
+    this.toYtdec('resume');
+    if (at > 0) {
+        await this.waitFirstTick(3000);
+        if (gen !== this.gen || this.state !== 'playing' || this.paused) return;
+        const target = this.stoppedAt !== null && this.stoppedAt !== undefined ? this.stoppedAt : at;
+        this.stoppedAt = null;
+        this.settle = { ms: target, until: Date.now() + (this.opts.settleMs || 3000) };
+        await this.audio.seek(target);
+    } else {
+        this.stoppedAt = null;
+    }
+};
 Daemon.prototype.seek = async function (ms) {
+    if (this.stopping) return;
     ms = Math.max(0, Math.floor(Number(ms) || 0));
     if (this.restart) { this.restart.ms = ms; this.restart.sought = true; }   // the start under way ends there, not where it was left
     if (this.waiting()) return;
@@ -1700,6 +1805,7 @@ Daemon.prototype.setVideo = function (on) {
 
 // zoom while playing: ytdec again at the clock with the other mode (the sound plays on)
 Daemon.prototype.setFill = function (on) {
+    if (this.stopping) return;
     const c = this.cur;
     if (this.restart) this.restart.fill = on;   // (a quality restart under way: the new video starts in this mode)
     if (!c || c.fill === on) return;
@@ -1710,6 +1816,7 @@ Daemon.prototype.setFill = function (on) {
 };
 // Video quality while playing: the same video fetched again at that height, from where it is
 Daemon.prototype.requality = async function (quality) {
+    if (this.stopping) return undefined;
     const c = this.cur, h = qualityHeight(quality, readJson(this.opts.leaseFile)), was = this.restart;
     if (!c || h === (was ? was.height : c.height)) return undefined;
     // (a restart already under way: its place and mode carry over; the last quality asked wins)
@@ -1723,7 +1830,7 @@ Daemon.prototype.requality = async function (quality) {
 
 // ---- MediaPlayer events
 Daemon.prototype.onTime = function (v) {
-    if (!this.ticking || !v || typeof v.elapsed !== 'number') return;
+    if (!this.ticking || this.paused || !v || typeof v.elapsed !== 'number') return;
     if (!(v.total > 1)) return; // {elapsed:0,total:1} right after playFile
     this.lastRawAt = Date.now();   // the player runs (whatever we make of this time): what the audio watchdog goes by
     if (v.elapsed > (this.rawFrom || 0) + 10000) { this.rawFrom = v.elapsed; this.audioTries = 0; }   // it has played on for 10 s: its past stalls are over
@@ -1768,6 +1875,7 @@ Daemon.prototype.onTime = function (v) {
             return;
         }
     }
+    if (v.elapsed > 0) this.sawTime = true;
     if (this.skipSegments()) return;
     this.savePos(false);
     if (this.cur.track && Date.now() - this.cur.track.at > 60000) this.ping(this.cur, true);
@@ -1781,16 +1889,27 @@ Daemon.prototype.onTime = function (v) {
 };
 Daemon.prototype.onPlayerState = function (v) {
     if (!this.ticking) return;
-    if (v === 'PLAYER_STATE_PLAY') this.sawPlay = true; // also mid-switch: the full file's own PLAY arms its end
+    if (v === 'PLAYER_STATE_PLAY') { this.sawPlay = true; return; } // also mid-switch: the full file's own PLAY arms its end
     if (this.switching) return;
-    // the head file ran out (before onTime saw its end): wait for audio.m4a, never `ended`
+    if (v === 'PLAYER_STATE_PAUSE' && this.state === 'playing' && !this.paused && !this.headWait) {
+        this.log('audio paused by car at ' + this.elapsed);
+        this.externalPause().catch((e) => this.log('pause: ' + e));
+        return;
+    }
+    // the head file ran out (before onTime saw its end): wait for audio.m4a when near the head's end,
+    // else the car stopped playback mid-head (mute / source switch): hold as paused so audio_ready does not resume on its own
     if (v === 'PLAYER_STATE_STOP' && this.head && this.sawPlay) {
         this.sawPlay = false;
-        if (!this.headWait) this.waitFull(this.elapsed).catch((e) => this.log(e));
+        if (!this.head.ms || this.head.ms - this.elapsed < 5000) {
+            if (!this.headWait) this.waitFull(this.elapsed).catch((e) => this.log(e));
+            return;
+        }
+        this.log('audio stopped on head at ' + this.elapsed + ' of ' + this.head.ms + ': held as paused');
+        this.externalPause().catch((e) => this.log('pause: ' + e));
         return;
     }
     // STOP we did not ask for, after it played: the end of the file when near it, else the player
-    // stopped mid-file (seen after a PLAY sent while playing): hold as paused, resume restarts it there.
+    // stopped mid-file (car mute / source switch, or after a PLAY sent while playing): hold as paused, release the sink.
     if (v === 'PLAYER_STATE_STOP' && this.sawPlay) {
         this.sawPlay = false;
         if (!this.total || this.total - this.elapsed < 4000) {
@@ -1799,15 +1918,12 @@ Daemon.prototype.onPlayerState = function (v) {
             return;
         }
         this.log('audio stopped at ' + this.elapsed + ' of ' + this.total + ': held as paused');
-        this.stoppedAt = this.elapsed;
-        this.paused = true;
-        this.toYtdec('pause');
-        this.setState('paused');
+        this.externalPause().catch((e) => this.log('pause: ' + e));
     }
 };
 // ITEM_BUFFER_UNDERRUN (car, 2026-11-18, a long video): the player ran out of audio it had been given. It is not the end of the
 // video: on the head file the full audio is not there yet (wait for it, as when the head ends); on the full file the player
-// is started again where it was (pause + resume), up to 3 times a minute, then it is an error as any other.
+// is started again where it was (restartAudio), up to 3 times a minute, then it is an error as any other.
 Daemon.prototype.onPlaybackError = function (v) {
     if (!this.ticking) return;
     const underrun = v && v.event === 'ITEM_BUFFER_UNDERRUN' && (this.state === 'playing' || this.state === 'paused');
@@ -1832,14 +1948,9 @@ Daemon.prototype.onPlaybackError = function (v) {
         if (this.underruns.length < 3) {
             this.underruns.push(now);
             this.log('audio: underrun at ' + this.elapsed + ', starting the player again there');
-            if (this.state !== 'playing') return;   // paused: the player is stopped, nothing to start again
+            if (this.state !== 'playing' || this.paused) return;   // paused: the player is stopped, nothing to start again
             this.recovering = true;
-            (async () => {
-                const gen = this.gen;
-                await this.pause();
-                if (gen !== this.gen) return;   // a fatal error / Stop / new video came in meanwhile: nothing to start again
-                await this.resume();
-            })()
+            this.restartAudio()
                 .catch((e) => this.log('underrun recovery: ' + e))
                 .then(() => { this.recovering = false; });
             return;
@@ -1928,29 +2039,45 @@ Daemon.prototype.ytdecDied = function (child, why) {
     this.emit({ ev: 'error', msg: 'video failed, audio only' });
     return undefined;
 };
-// Playing, yet the BMW player sends no time (car: a video opens black and silent until Stop and open again, or a seek):
-// the playFile was accepted and nothing plays. After 6 s the player is started again where it was (a new connection,
-// as resume() does); 3 times in vain, it is an error with Try again rather than a black screen.
+// Playing, yet the BMW player sends no time on start (car: a video opens black and silent until Stop and open again):
+// the playFile was accepted and nothing plays. While !sawTime, restart up to 3 times after 6 s, then report an error.
+// Once playback was already ticking (sawTime), or if AudioManager disconnected/suspended our route, silence means the
+// car muted/paused or switched audio source: hold as paused instead of reconnecting and turning sound back on.
 Daemon.prototype.audioWatch = function () {
-    if (!this.ticking || this.state !== 'playing' || this.paused || this.headWait || this.switching || this.recovering) return;
+    if (!this.ticking || this.state !== 'playing' || this.paused || this.headWait || this.switching || this.recovering || this.checkingAudio) return;
     if (this.stoppedAt !== null && this.stoppedAt !== undefined) return;   // a resume under way
+    const idleMs = Date.now() - (this.lastRawAt || 0);
     const wait = this.opts.audioStartMs || 6000;
-    if (Date.now() - (this.lastRawAt || 0) < wait) return;
-    this.lastRawAt = Date.now();
-    if ((this.audioTries || 0) >= 3) {
-        this.failPlayback('audio does not start').catch((e) => this.log(e));
-        return;
-    }
-    this.audioTries = (this.audioTries || 0) + 1;
-    this.log('audio: no time from the player for ' + wait + ' ms at ' + this.elapsed + ', starting it again (' + this.audioTries + ')');
-    this.recovering = true;
-    (async () => {
-        const gen = this.gen, r = this.restart, pa = !!(r && r.paused);
-        await this.pause();
-        if (gen !== this.gen) return;
-        await this.resume();
-        if (gen === this.gen && r && this.restart === r) r.paused = pa;   // (a start asked paused stays so at its first time)
-    })().catch((e) => this.log('audio restart: ' + e)).then(() => { this.recovering = false; this.lastRawAt = Date.now(); });
+    const checkRoute = this.sawTime && idleMs >= Math.min(1500, wait);
+    if (!checkRoute && idleMs < wait) return;
+    this.checkingAudio = true;
+    const gen = this.gen;
+    this.audio.hasConnection().then((connected) => {
+        this.checkingAudio = false;
+        if (gen !== this.gen || !this.ticking || this.state !== 'playing' || this.paused || this.headWait || this.switching || this.recovering) return undefined;
+        if (this.stoppedAt !== null && this.stoppedAt !== undefined) return undefined;
+        const nowIdle = Date.now() - (this.lastRawAt || 0);
+        if (!connected) {
+            this.log('audio: route disconnected externally at ' + this.elapsed + ', holding as paused');
+            return this.externalPause();
+        }
+        if (nowIdle < wait) return undefined;
+        if (this.sawTime) {
+            this.log('audio: player stopped ticking at ' + this.elapsed + ' while playing (muted/paused externally), holding as paused');
+            return this.externalPause();
+        }
+        this.lastRawAt = Date.now();
+        if ((this.audioTries || 0) >= 3) {
+            return this.failPlayback('audio does not start');
+        }
+        this.audioTries = (this.audioTries || 0) + 1;
+        this.log('audio: no time from the player for ' + wait + ' ms at ' + this.elapsed + ', starting it again (' + this.audioTries + ')');
+        this.recovering = true;
+        return this.restartAudio().catch((e) => this.log('audio restart: ' + e)).then(() => {
+            this.recovering = false;
+            this.lastRawAt = Date.now();
+        });
+    }).catch((e) => { this.checkingAudio = false; this.log('audioWatch: ' + e); });
 };
 Daemon.prototype.watchdog = function () {
     // the picture given up (two deaths in a row): tried again every 15 s, 4 times a video, so it comes back by itself

@@ -235,8 +235,9 @@ async function main() {
         assert.strictEqual(called('setTime').length, 0, 'no setTime before the restarted file ticks (the player drops it)');
         tick(0);
         await waitUntil(() => called('setTime').length > 0);
-        // pause = STOP where it is (the car's player answers OK to PAUSE and plays on); resume = the file again, set there
-        assert.deepStrictEqual(called('sendButtonEvent').map((x) => x.a.button), ['STOP', 'STOP'], 'pause; resume releases (STOP, disconnect) and connects again');
+        // pause releases (STOP + disconnect) at once; resume connects again and seeks where it stopped
+        assert.deepStrictEqual(called('sendButtonEvent').map((x) => x.a.button), ['STOP'], 'pause releases (STOP + disconnect); resume connects again');
+        assert.strictEqual(called('disconnect').length, 1, 'disconnected on pause');
         assert.strictEqual(called('connect').length, 3, 'resume retries two temporary audio route rejections');
         assert.deepStrictEqual(called('playFile').map((x) => x.a.path), [path.join(cache, 'DemoVideo01', 'audio.m4a')]);
         // the seek sent while the file restarts wins: one setTime, there
@@ -320,7 +321,8 @@ async function main() {
         calls.length = 0;
         subs.playerState('PLAYER_STATE_STOP');
         await c.waitFor((x) => x.ev === 'state' && x.state === 'paused');
-        assert.strictEqual(ours().length, 1, 'audio kept connected');
+        await waitUntil(() => ours().length === 0);
+        assert.strictEqual(ours().length, 0, 'audio route released on mid-file stop');
         c.send({ cmd: 'resume' });
         await c.waitFor((x) => x.ev === 'state' && x.state === 'playing');
         await waitUntil(() => called('playFile').length > 0);
@@ -395,7 +397,7 @@ async function main() {
         await c.waitFor((x) => x.ev === 'state' && x.state === 'idle');
     });
 
-    await t('audio: playing but the player sends no time -> started again by itself (new connection, playFile); 3 times in vain -> error', async () => {
+    await t('audio: no time on start -> started again (new connection, playFile); silent after playing -> held as paused (never auto-unmutes); silent from start 3 times -> error', async () => {
         await sleep(500); fs.writeFileSync(ytlog, ''); setMode('ok');
         await playing();
         calls.length = 0; c.clear();
@@ -404,17 +406,72 @@ async function main() {
         assert.ok(logs.some((l) => /audio: no time from the player/.test(l)));
         assert.ok(called('connect').length >= 1, 'on a new connection');
         assert.ok(!c.evs.some((x) => x.ev === 'error'), 'no error yet');
-        // the player comes alive: left alone from then on
+        // the player comes alive: left alone while ticking
         const n = called('playFile').length;
-        for (let k = 0; k < 12; k++) { tick(1000 + k * 1000); await sleep(150); }   // (played on for 10 s: the count starts again)
+        for (let k = 0; k < 6; k++) { tick(1000 + k * 1000); await sleep(150); }
         assert.strictEqual(called('playFile').length, n, 'ticking: no more restarts');
         assert.strictEqual(d.state, 'playing');
-        // silent for good: three tries, then an error (Try again on screen)
+        // muted/paused externally on the car (ticks stop after playback already started): held as paused, never restarted
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'paused', 4000);
+        await waitUntil(() => ours().length === 0);
+        assert.strictEqual(called('playFile').length, n, 'external mute/silence does not restart playFile');
+        assert.strictEqual(ours().length, 0, 'sink released');
+        // a fresh play that never ticks from the start: three tries, then an error (Try again on screen)
+        calls.length = 0; c.clear();
+        await playing();
+        calls.length = 0;
         const e = await c.waitFor((x) => x.ev === 'error' && /audio does not start/.test(x.msg), 30000);
         assert.ok(e);
-        assert.strictEqual(called('playFile').length, n + 3);
+        assert.strictEqual(called('playFile').length, 3);
         d.opts.audioStartMs = 600000;
         c.send({ cmd: 'stop' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'idle'); c.clear();
+    });
+
+    await t('external car pause (PLAYER_STATE_PAUSE) and external route disconnect -> held as paused, never restarts in background', async () => {
+        d.opts.audioStartMs = 700;
+        await playing();
+        tick(8000);
+        calls.length = 0; c.clear();
+        subs.playerState('PLAYER_STATE_PAUSE');
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'paused');
+        await waitUntil(() => ours().length === 0);
+        await sleep(1100);
+        assert.strictEqual(called('playFile').length, 0, 'PLAYER_STATE_PAUSE does not trigger audioWatch restart');
+        assert.strictEqual(d.state, 'paused');
+        // resume, then simulate BMW AudioManager disconnecting source 1046 (switching to Radio/CarPlay)
+        c.send({ cmd: 'resume' });
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'playing');
+        await waitUntil(() => called('playFile').length === 1);
+        tick(0);
+        await waitUntil(() => called('setTime').length === 1);
+        tick(8500);
+        calls.length = 0; c.clear();
+        conns = conns.filter((x) => x.sourceID !== 1046);
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'paused', 4000);
+        await sleep(1100);
+        assert.strictEqual(called('connect').length, 0, 'route disconnect does not steal audio back');
+        assert.strictEqual(called('playFile').length, 0);
+        d.opts.audioStartMs = 600000;
+        c.send({ cmd: 'stop' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'idle'); c.clear();
+    });
+
+    await t('audioWatch during quality restart (waiting() true): still restarts stalled playFile instead of no-oping', async () => {
+        fs.writeFileSync(ctl, ''); setMode('ok');
+        await fetchPlay('FFFFFFFFFFQ');
+        tick(5000); await sleep(50);
+        d.opts.audioStartMs = 700;
+        c.clear();
+        c.send({ cmd: 'quality', quality: '480' });
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'playing', 4000);
+        assert.strictEqual(d.waiting(), true, 'quality restart awaits its first tick');
+        calls.length = 0;
+        await waitUntil(() => called('playFile').length >= 1, 5000);
+        assert.strictEqual(d.restart && d.restart.ms, 5000, 'restore target preserved across audioWatch recovery');
+        tick(0);
+        await waitUntil(() => called('setTime').some((x) => x.a.newTimeElapsed === 5000));
+        d.opts.audioStartMs = 600000;
+        c.send({ cmd: 'stop' }); await c.waitFor((x) => x.ev === 'state' && x.state === 'idle'); c.clear();
+        fs.rmSync(path.join(cache, 'FFFFFFFFFFQ'), { recursive: true, force: true });
     });
 
     await t('seek: the player\'s times from the old place (before the setTime lands) are not taken, either way', async () => {
@@ -814,6 +871,22 @@ async function main() {
         await stopIdle();
     });
 
+    await t('external STOP mid-head (mute / source switch at 15 s of 60 s): held as paused, audio_ready does not resume on its own', async () => {
+        const id = 'FFFFFFFFFHB';
+        await headPlay(id, 'hold');
+        tick(15000);
+        subs.playerState('PLAYER_STATE_STOP');
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'paused');
+        await waitUntil(() => ours().length === 0);
+        fs.writeFileSync(ctl, 'full');
+        await waitUntil(() => d.fullReady);
+        await sleep(200);
+        assert.strictEqual(d.state, 'paused', 'still paused after audio.m4a arrives');
+        assert.strictEqual(called('playFile').length, 1, 'audio.m4a not started while paused');
+        assert.strictEqual(ours().length, 0, 'sink stays free');
+        await stopIdle();
+    });
+
     await t('ITEM_BUFFER_UNDERRUN while switching head -> full (or waiting for it): ignored, no error, the switch completes', async () => {
         const id = 'FFFFFFFFFU3';
         await headPlay(id, 'hold');
@@ -1001,6 +1074,28 @@ async function main() {
         const st = c.evs.filter((x) => x.ev === 'state').map((x) => x.state);
         assert.strictEqual(st[st.length - 1], 'idle', 'still idle: ' + st.join());
         assert.ok(!st.slice(st.indexOf('idle') + 1).length, 'nothing after idle: ' + st.join());
+        // also under slow SOME/IP teardown: Stop during quality's release, and quality during Stop's release
+        await fetchPlay(id);
+        callDelay = 80;
+        c.clear();
+        c.send({ cmd: 'quality', quality: '480' });
+        await sleep(100);
+        c.send({ cmd: 'stop' });
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'idle', 4000);
+        await sleep(500);
+        assert.strictEqual(d.state, 'idle');
+        assert.strictEqual(ours().length, 0);
+        callDelay = 0;
+        await fetchPlay(id);
+        callDelay = 80;
+        c.clear();
+        c.send({ cmd: 'stop' });
+        c.send({ cmd: 'quality', quality: '480' });
+        await c.waitFor((x) => x.ev === 'state' && x.state === 'idle', 4000);
+        await sleep(500);
+        callDelay = 0;
+        assert.strictEqual(d.state, 'idle', 'quality sent while Stop tears down is ignored');
+        assert.strictEqual(ours().length, 0);
     });
 
     await t('related: the watch-next answer\'s videos (not the video itself), asked once per 10 min', async () => {

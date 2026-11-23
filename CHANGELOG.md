@@ -1,5 +1,11 @@
 # Changelog
 
+## App 0.3.48, service 0.3.37
+
+- Fix audio restarting on its own ~6 s after muting/pausing on the car or switching audio source while in the background: handle `PLAYER_STATE_PAUSE`, external AudioManager route disconnects, mid-head external stops, and stop `audioWatch` from reconnecting once playback has already started ticking.
+- Release the AudioManager connection immediately on pause, serialize SOME/IP route operations on a single queue, fix `audioWatch` recovery during quality changes, and ignore stale commands during `Stop` teardown.
+- Advance autoplay in the background, cap hidden `ACTIVE` hold to 5 minutes while paused, and avoid `process.exit(1)` on uncaught app exceptions.
+
 ## App 0.3.47, service 0.3.36
 
 - A seek the player never takes (every setTime dropped): asked three times in all, then the picture and the app follow the sound where it is (a notice says the seek failed) instead of the picture waiting at the place asked for.
